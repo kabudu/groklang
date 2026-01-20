@@ -114,6 +114,19 @@ class OpenAiService(LlmService):
         self.model = model
 
     def call(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        import hashlib
+        request_hash = hashlib.md5(str(request).encode()).hexdigest()
+
+        # Check cache
+        if hasattr(self, 'cache') and request_hash in self.cache:
+            cached = self.cache[request_hash]
+            # Still analyze cached output
+            if 'output' in cached and cached.get('success'):
+                security_issues = self._analyze_ai_output(cached['output'])
+                if security_issues:
+                    return {'success': False, 'error': f'Cached AI-generated content has security issues: {security_issues}'}
+            return cached
+
         import openai
         openai.api_key = self.api_key
 
@@ -124,9 +137,39 @@ class OpenAiService(LlmService):
                 temperature=0.7,
                 timeout=5,
             )
-            return {'success': True, 'output': response.choices[0].message.content}
+            ai_output = response.choices[0].message.content
+            # Post-AI static analysis
+            security_issues = self._analyze_ai_output(ai_output)
+            if security_issues:
+                result = {'success': False, 'error': f'AI-generated content has security issues: {security_issues}'}
+            else:
+                result = {'success': True, 'output': ai_output}
+            # Cache result
+            if not hasattr(self, 'cache'):
+                self.cache = {}
+            self.cache[request_hash] = result
+            return result
         except Exception as e:
-            return {'success': False, 'error': str(e)}
+            result = {'success': False, 'error': str(e)}
+            if not hasattr(self, 'cache'):
+                self.cache = {}
+            self.cache[request_hash] = result
+            return result
+
+    def _analyze_ai_output(self, code: str) -> list:
+        """Post-AI static analysis for security issues"""
+        issues = []
+        # Basic security checks
+        if 'eval(' in code or 'exec(' in code:
+            issues.append('Potential code injection via eval/exec')
+        if 'import os' in code and 'os.system' in code:
+            issues.append('Unsafe system calls detected')
+        if 'open(' in code and ('w' in code or 'a' in code):
+            issues.append('File write operations without input validation')
+        if 'subprocess' in code:
+            issues.append('Subprocess usage without sanitization')
+        # Add more patterns as needed
+        return issues
 
     def format_prompt(self, request: Dict[str, Any]) -> str:
         op = request['operation']

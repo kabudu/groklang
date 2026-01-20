@@ -8,6 +8,8 @@ class Parser:
         self.tokens = tokens
         self.parser = yacc.yacc(module=self, debug=False, write_tables=False)
         self.errors = []
+        self.recursion_depth = 0
+        self.max_recursion = 100  # Prevent stack overflow
 
     # Start rule
     def p_program(self, p):

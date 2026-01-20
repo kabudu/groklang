@@ -33,6 +33,9 @@ class Compiler:
         self.codegen = CodeGenerator()
         self.vm = BytecodeVM()
         self.llvm_gen = LLVMGenerator()
+        # Caches for incremental compilation
+        self.ast_cache = {}
+        self.ai_cache = {}
 
     def create_llm_service(self):
         backend = config.ai_backend
@@ -48,12 +51,20 @@ class Compiler:
             return MockLlmService()
 
     def compile(self, code: str, target='vm', optimize=True):
-        # Parse
-        ast = parser.parser.parse(code)
-        if parser.parser.errors:
-            raise SyntaxError(f"Parse errors: {parser.parser.errors}")
-        if ast is None or not isinstance(ast, tuple) or len(ast) < 2:
-            raise SyntaxError("Failed to parse code")
+        import hashlib
+        code_hash = hashlib.md5(code.encode()).hexdigest()
+
+        # Check AST cache
+        if code_hash in self.ast_cache:
+            ast = self.ast_cache[code_hash]
+        else:
+            # Parse
+            ast = parser.parser.parse(code)
+            if parser.parser.errors:
+                raise SyntaxError(f"Parse errors: {parser.parser.errors}")
+            if ast is None or not isinstance(ast, tuple) or len(ast) < 2:
+                raise SyntaxError("Failed to parse code")
+            self.ast_cache[code_hash] = ast
 
         # Expand macros
         ast = self.macro_expander.expand_ast(ast)
