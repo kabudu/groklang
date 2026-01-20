@@ -77,6 +77,13 @@ class MatchExpr(AstNode):
         self.scrutinee = scrutinee
         self.arms = arms  # List of (pattern, guard, body)
 
+class LetStmt(AstNode):
+    def __init__(self, name: str, mutable: bool, expr, line: int, col: int):
+        super().__init__(line, col)
+        self.name = name
+        self.mutable = mutable
+        self.expr = expr
+
 class FunctionCall(AstNode):
     def __init__(self, func, args: list, line: int, col: int):
         super().__init__(line, col)

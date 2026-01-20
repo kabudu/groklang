@@ -211,68 +211,7 @@ class Parser:
 
 
 
-    def p_if_expr(self, p):
-        """if_expr : IF expression block
-                    | IF expression block ELSE block
-                    | IF expression block ELSE if_expr"""
-        condition = p[2]
-        then_body = p[3]
-        else_body = p[5] if len(p) == 6 else None
-        p[0] = IfExpr(condition, then_body, else_body, p.lineno(1), 1)
 
-    def p_match_expr(self, p):
-        """match_expr : MATCH expression LBRACE match_arms RBRACE"""
-        p[0] = MatchExpr(p[2], p[4], p.lineno(1), 1)
-
-    def p_match_arms(self, p):
-        """match_arms : match_arm
-                       | match_arms match_arm"""
-        if len(p) == 2:
-            p[0] = [p[1]]
-        else:
-            p[1].append(p[2])
-            p[0] = p[1]
-
-    def p_match_arm(self, p):
-        """match_arm : pattern FATARROW expression COMMA"""
-        p[0] = (p[1], None, p[3])
-
-
-
-    def p_block(self, p):
-        """block : LBRACE statements RBRACE
-                 | LBRACE statements expression RBRACE"""
-        if len(p) == 4:
-            # No final expression
-            p[0] = Block(p[2] or [], p.lineno(1), 1)
-        else:
-            # Final expression
-            statements = p[2] or []
-            statements.append(p[3])  # Add expression as last statement
-            p[0] = Block(statements, p.lineno(1), 1)
-
-    def p_statements(self, p):
-        """statements : statements statement
-                       | statement
-                       | empty"""
-        if p[1] is None:
-            p[0] = []
-        elif len(p) == 2:
-            p[0] = [p[1]] if p[1] else []
-        else:
-            if p[1]:
-                p[1].append(p[2])
-                p[0] = p[1]
-            else:
-                p[0] = [p[2]] if p[2] else []
-
-    def p_statement(self, p):
-        """statement : expression SEMICOLON
-                      | LET ID ASSIGN expression SEMICOLON"""
-        if len(p) == 3:
-            p[0] = p[1]
-        else:
-            p[0] = ('Let', p[2], p[4])
 
     def p_args(self, p):
         """args : argument_list
@@ -546,9 +485,6 @@ class Parser:
             p[1][p[3][0]] = p[3][1]
             p[0] = p[1]
 
-    def p_field_init(self, p):
-        """field_init : ID COLON expression"""
-        p[0] = (p[1], p[3])
 
     def p_enum_literal(self, p):
         """enum_literal : ID DOUBLECOLON ID LPAREN expression RPAREN

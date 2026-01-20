@@ -47,7 +47,7 @@ class Compiler:
         else:
             return MockLlmService()
 
-    def compile(self, code: str, target='vm'):
+    def compile(self, code: str, target='vm', optimize=True):
         # Parse
         ast = parser.parser.parse(code)
         if parser.parser.errors:
@@ -85,6 +85,11 @@ class Compiler:
         # Type check
         substitutions = self.type_checker.check(ast)
         errors = self.type_checker.errors
+
+        # Optimize AST
+        if optimize:
+            self.optimizer.ast = ast
+            ast = self.optimizer.optimize()
 
         # Generate code
         if target == 'vm':
