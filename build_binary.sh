@@ -15,7 +15,7 @@ pip install -r requirements.txt
 pip install PyInstaller
 
 # Build binary
-pyinstaller --onefile --name groklang src/groklang/__main__.py
+pyinstaller --onefile --name grok src/groklang/__main__.py
 
-echo "Binary created: dist/groklang"
-echo "You can now run: ./dist/groklang hello.grok"
+echo "Binary created: dist/grok"
+echo "You can now run: ./dist/grok hello.grok"

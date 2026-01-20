@@ -21,7 +21,7 @@ pip install -r requirements.txt
 ./build_binary.sh
 ```
 
-This creates a standalone `groklang` executable.
+This creates a standalone `grok` executable.
 
 ### AI Configuration
 
@@ -47,19 +47,19 @@ Without configuration, AI features use mock responses.
 2. Compile using the GrokLang compiler:
 
 ```bash
-groklang hello.grok
+grok hello.grok
 ```
 
 3. Compile and run:
 
 ```bash
-groklang hello.grok --run
+grok hello.grok --run
 ```
 
 For LLVM IR output:
 
 ```bash
-groklang hello.grok --target llvm
+grok hello.grok --target llvm
 ```
 
 This generates `hello.ll` (LLVM IR file).

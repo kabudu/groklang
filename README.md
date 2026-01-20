@@ -104,7 +104,7 @@ Compile and run:
 ./build_binary.sh
 
 # Then compile and run
-groklang hello.grok --run
+grok hello.grok --run
 ```
 
 ---
@@ -331,10 +331,10 @@ cd docs && sphinx-build -b html . _build/html
 ./build_binary.sh
 
 # Compile a GrokLang file
-groklang myprogram.grok
+grok myprogram.grok
 
 # Compile and run
-groklang myprogram.grok --run
+grok myprogram.grok --run
 ```
 
 ---
