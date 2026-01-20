@@ -80,10 +80,10 @@ class ConstraintCollector:
                         var_name, var_expr = stmt[1], stmt[3]
                         var_type = self.collect_expr(var_expr, env)
                         env.bind(var_name, var_type)
-                    else:
+                    elif stmt is not None:
                         # Expression statement
                         self.collect_expr(stmt, env)
-                # Blocks return unit (no last expression type)
+                # Blocks return unit
                 return PrimitiveType("unit")
             else:
                 return PrimitiveType("unit")

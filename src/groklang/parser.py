@@ -500,13 +500,7 @@ class Parser:
         """loop_expr : LOOP block"""
         p[0] = ('Loop', p[2])
 
-    def p_for_expr(self, p):
-        """for_expr : FOR ID IN expression block"""
-        p[0] = ('For', p[2], p[4], p[5])
 
-    def p_while_expr(self, p):
-        """while_expr : WHILE expression block"""
-        p[0] = ('While', p[2], p[3])
 
     # Expressions for return/break/continue
     def p_return_expr(self, p):

@@ -19,6 +19,9 @@ class CodeGenerator:
     def gen_function(self, func: FunctionDef) -> IRFunction:
         self.blocks = [IRBlock("entry")]
         self.gen_expr(func.body, self.blocks[0])
+        # Add return if not present
+        if self.blocks[0].instructions and self.blocks[0].instructions[-1].opcode != "RET":
+            self.blocks[0].instructions.append(IRInstruction("RET", []))
         return IRFunction(func.name, func.params, self.blocks)
 
     def gen_expr(self, expr, block: IRBlock):
@@ -37,6 +40,17 @@ class CodeGenerator:
             var_name, var_expr = expr[1], expr[3]
             self.gen_expr(var_expr, block)
             block.instructions.append(IRInstruction("STORE_VAR", [var_name]))
+        elif isinstance(expr, tuple) and expr[0] == 'Array':
+            # Array literal (simplified)
+            for elem in expr[1]:
+                self.gen_expr(elem, block)
+        elif isinstance(expr, tuple) and expr[0] == 'Tuple':
+            # Tuple literal (simplified)
+            for elem in expr[1]:
+                self.gen_expr(elem, block)
+        elif isinstance(expr, tuple) and expr[0] == 'StructLiteral':
+            # Struct literal (simplified)
+            pass  # Placeholder
         elif isinstance(expr, BinaryOp):
             self.gen_expr(expr.left, block)
             self.gen_expr(expr.right, block)
@@ -52,6 +66,12 @@ class CodeGenerator:
                 block.instructions.append(IRInstruction("EQ", []))
             elif expr.op == '<':
                 block.instructions.append(IRInstruction("LT", []))
+            elif expr.op == '>':
+                block.instructions.append(IRInstruction("GT", []))
+            elif expr.op == '<=':
+                block.instructions.append(IRInstruction("LE", []))
+            elif expr.op == '>=':
+                block.instructions.append(IRInstruction("GE", []))
         elif isinstance(expr, FunctionCall):
             for arg in expr.args:
                 self.gen_expr(arg, block)

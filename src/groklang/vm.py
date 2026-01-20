@@ -72,6 +72,20 @@ class BytecodeVM:
             b = self.stack.pop()
             a = self.stack.pop()
             self.stack.append(a < b)
+        elif opcode == "GT":
+            b = self.stack.pop()
+            a = self.stack.pop()
+            self.stack.append(a > b)
+        elif opcode == "LE":
+            b = self.stack.pop()
+            a = self.stack.pop()
+            self.stack.append(a <= b)
+        elif opcode == "GE":
+            b = self.stack.pop()
+            a = self.stack.pop()
+            self.stack.append(a >= b)
+        elif opcode == "RET":
+            return self.stack.pop() if self.stack else None
         elif opcode == "CALL":
             func_name = args[0]
             num_args = args[1]

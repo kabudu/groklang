@@ -6,7 +6,12 @@ class Unifier:
         """Solve type constraints via union-find"""
         substitution: Dict[str, Type] = {}
 
+        if not constraints:
+            return substitution
+
         for constraint in constraints:
+            if constraint.left is None or constraint.right is None:
+                continue  # Skip invalid constraints
             s_left = self.apply_substitution(constraint.left, substitution)
             s_right = self.apply_substitution(constraint.right, substitution)
 
