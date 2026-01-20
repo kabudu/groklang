@@ -5,7 +5,9 @@ from .codegen import CodeGenerator
 from .vm import BytecodeVM
 from .llvm_codegen import LLVMGenerator
 from .config import config
+from .deadlock_detector import DeadlockDetector
 from .runtime_ai import RuntimeAIOptimizer
+from .macro_expander import MacroExpander
 from .deadlock_detector import DeadlockDetector
 
 class Compiler:
@@ -15,6 +17,7 @@ class Compiler:
         self.decorator_processor = DecoratorProcessor(self.llm_service)
         self.deadlock_detector = DeadlockDetector(self.llm_service) if config.deadlock_detection else None
         self.runtime_ai = RuntimeAIOptimizer(self.llm_service, BytecodeVM().profiler)
+        self.macro_expander = MacroExpander()
         self.codegen = CodeGenerator()
         self.vm = BytecodeVM()
         self.llvm_gen = LLVMGenerator()
@@ -39,6 +42,9 @@ class Compiler:
             raise SyntaxError(f"Parse errors: {parser.parser.errors}")
         if ast is None or not isinstance(ast, tuple) or len(ast) < 2:
             raise SyntaxError("Failed to parse code")
+
+        # Expand macros
+        ast = self.macro_expander.expand_ast(ast)
 
         # Process decorators
         ast = self.decorator_processor.process_decorators(ast)

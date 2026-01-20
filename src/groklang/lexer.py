@@ -27,7 +27,7 @@ reserved = {
     'true': 'TRUE', 'false': 'FALSE', 'where': 'WHERE',
     'type': 'TYPE', 'as': 'AS', 'unsafe': 'UNSAFE',
     'extern': 'EXTERN', 'const': 'CONST', 'static': 'STATIC',
-    'macro': 'MACRO', 'ai': 'AI', 'actor': 'ACTOR', 'spawn': 'SPAWN',
+    'macro': 'MACRO', 'macro_rules': 'MACRO_RULES', 'ai': 'AI', 'actor': 'ACTOR', 'spawn': 'SPAWN',
     'move': 'MOVE', 'in': 'IN', '_': 'UNDERSCORE',
 }
 

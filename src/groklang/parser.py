@@ -359,7 +359,8 @@ class Parser:
                 | trait_def
                 | impl_block
                 | use_statement
-                | module_def"""
+                | module_def
+                | macro_def"""
         if len(p) == 3:  # decorator item
             item = p[2]
             item.decorators.append(p[1][1])  # Add decorator name
@@ -409,7 +410,8 @@ class Parser:
                          | spawn_expr
                          | return_expr
                          | break_expr
-                         | continue_expr"""
+                         | continue_expr
+                         | macro_call"""
         if p[1] in ('true', 'false'):
             p[0] = BoolLiteral(p[1] == 'true', p.lineno(1), 1)
         elif isinstance(p[1], (int, float)):
@@ -521,6 +523,34 @@ class Parser:
     def p_spawn_expr(self, p):
         """spawn_expr : SPAWN block"""
         p[0] = ('Spawn', p[2])
+
+    # Macros
+    def p_macro_def(self, p):
+        """macro_def : MACRO_RULES MACRO ID macro_rules"""
+        p[0] = ('MacroDef', p[3], p[4])
+
+    def p_macro_rules(self, p):
+        """macro_rules : LPAREN macro_rule_list RPAREN"""
+        p[0] = p[2]
+
+    def p_macro_rule_list(self, p):
+        """macro_rule_list : macro_rule
+                            | macro_rule_list COMMA macro_rule"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            p[1].append(p[3])
+            p[0] = p[1]
+
+    def p_macro_rule(self, p):
+        """macro_rule : LPAREN pattern RPAREN FATARROW LPAREN expression RPAREN"""
+        p[0] = ('MacroRule', p[2], p[5])
+
+    def p_macro_call(self, p):
+        """macro_call : ID BANG LPAREN args RPAREN
+                       | ID BANG LBRACKET args RBRACKET
+                       | ID BANG LBRACE args RBRACE"""
+        p[0] = ('MacroCall', p[1], p[4])
 
     # Update patterns for more complex matching
     def p_pattern(self, p):

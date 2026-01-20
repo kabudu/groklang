@@ -271,6 +271,22 @@ fn translate_me() {
 }
 ```
 
+### Macros
+
+GrokLang supports compile-time metaprogramming with macros:
+
+```groklang
+macro_rules println {
+    ($expr) => { print($expr) }
+}
+
+fn main() {
+    println!("Hello, World!");  // Expands to print("Hello, World!")
+}
+```
+
+Macros are expanded at compile-time, allowing code generation and syntactic sugar.
+
 ### Concurrency Safety
 
 GrokLang provides AI-powered deadlock detection and actor supervision:
