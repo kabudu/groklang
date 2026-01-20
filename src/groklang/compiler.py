@@ -5,12 +5,14 @@ from .codegen import CodeGenerator
 from .vm import BytecodeVM
 from .llvm_codegen import LLVMGenerator
 from .config import config
+from .deadlock_detector import DeadlockDetector
 
 class Compiler:
     def __init__(self):
         self.type_checker = TypeChecker()
         self.llm_service = self.create_llm_service()
         self.decorator_processor = DecoratorProcessor(self.llm_service)
+        self.deadlock_detector = DeadlockDetector(self.llm_service) if config.deadlock_detection else None
         self.codegen = CodeGenerator()
         self.vm = BytecodeVM()
         self.llvm_gen = LLVMGenerator()
@@ -38,6 +40,13 @@ class Compiler:
 
         # Process decorators
         ast = self.decorator_processor.process_decorators(ast)
+
+        # Deadlock detection
+        if self.deadlock_detector:
+            deadlock_analysis = self.deadlock_detector.analyze_code(code)
+            if deadlock_analysis['risk_level'] == 'high':
+                print("Warning: High deadlock risk detected!")
+                print(f"Recommendations: {deadlock_analysis['recommendations']}")
 
         # Type check
         substitutions = self.type_checker.check(ast)

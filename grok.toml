@@ -2,3 +2,6 @@
 backend = "mock"  # Change to "openai" or "xai" and set api_key
 # api_key = "your-api-key-here"
 timeout = 5
+
+[concurrency]
+deadlock_detection = true

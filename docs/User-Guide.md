@@ -271,6 +271,38 @@ fn translate_me() {
 }
 ```
 
+### Concurrency Safety
+
+GrokLang provides AI-powered deadlock detection and actor supervision:
+
+- **Deadlock Detection**: AI analyzes code for concurrency issues during compilation.
+- **Actor Supervision**: Actors can supervise children, restarting them on failure.
+
+Example:
+
+```groklang
+// AI detects potential deadlocks in complex actor interactions
+
+actor Supervisor {
+    fn init() {
+        let child = create_actor(Worker, "worker");
+        self.add_child(child);
+    }
+
+    fn handle_child_failure(child_name: str, error: str) {
+        println(f"Restarting {child_name} due to {error}");
+        // Automatic restart logic
+    }
+}
+```
+
+Configure in `grok.toml`:
+
+```toml
+[concurrency]
+deadlock_detection = true
+```
+
 The compiler validates AI-generated code for correctness before applying changes.
 
 For more details, see:

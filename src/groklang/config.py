@@ -11,6 +11,7 @@ class Config:
         self.ai_backend = "mock"
         self.ai_api_key = None
         self.ai_timeout = 5
+        self.deadlock_detection = True
         self.load_config()
 
     def load_config(self):
@@ -26,5 +27,9 @@ class Config:
             self.ai_backend = ai_config.get("backend", "mock")
             self.ai_api_key = ai_config.get("api_key", os.getenv("GROK_API_KEY"))
             self.ai_timeout = ai_config.get("timeout", 5)
+        
+        if "concurrency" in data:
+            conc_config = data["concurrency"]
+            self.deadlock_detection = conc_config.get("deadlock_detection", True)
 
 config = Config()

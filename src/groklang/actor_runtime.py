@@ -1,6 +1,6 @@
 import threading
 from queue import Queue
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 class ChannelRuntime:
     def __init__(self):
@@ -29,11 +29,13 @@ class ChannelRuntime:
             raise ValueError(f"Channel {cid} not found")
 
 class Actor:
-    def __init__(self, name: str):
+    def __init__(self, name: str, supervisor=None):
         self.name = name
         self.mailbox = Queue()
         self.state: Dict[str, Any] = {}
         self.running = True
+        self.supervisor = supervisor
+        self.children: List['Actor'] = []
 
     def send_message(self, message: Any):
         """Send message to actor"""
@@ -45,26 +47,60 @@ class Actor:
 
     def run(self):
         """Actor event loop"""
-        while self.running:
-            msg = self.receive()
-            if msg == 'EXIT':
-                self.running = False
-                break
-            # Process message
-            self.handle_message(msg)
+        try:
+            while self.running:
+                msg = self.receive()
+                if msg == 'EXIT':
+                    self.running = False
+                    break
+                elif isinstance(msg, tuple) and msg[0] == 'CHILD_FAILED':
+                    self.handle_child_failure(msg[1], msg[2])
+                else:
+                    # Process message
+                    self.handle_message(msg)
+        except Exception as e:
+            self.handle_failure(e)
 
     def handle_message(self, msg: Any):
         """Override in subclass"""
         pass
+
+    def handle_failure(self, error: Exception):
+        """Handle failure, notify supervisor"""
+        if self.supervisor:
+            self.supervisor.send_message(('CHILD_FAILED', self.name, str(error)))
+        self.running = False
+
+    def handle_child_failure(self, child_name: str, error: str):
+        """Supervise child failure"""
+        print(f"Supervisor {self.name}: Child {child_name} failed with {error}")
+        # Restart logic (simplified)
+        for child in self.children:
+            if child.name == child_name and not child.running:
+                # Restart child
+                new_child = type(child)(child_name + '_restarted')
+                self.children.remove(child)
+                self.add_child(new_child)
+                thread = threading.Thread(target=new_child.run)
+                thread.start()
+                break
+
+    def add_child(self, child: 'Actor'):
+        """Add supervised child"""
+        self.children.append(child)
+        child.supervisor = self
 
 class ActorRuntime:
     def __init__(self):
         self.actors: Dict[str, Actor] = {}
         self.threads: Dict[str, threading.Thread] = {}
 
-    def create_actor(self, actor_class, name: str) -> Actor:
-        actor = actor_class(name)
+    def create_actor(self, actor_class, name: str, supervisor=None) -> Actor:
+        actor = actor_class(name, supervisor)
         self.actors[name] = actor
+
+        if supervisor:
+            supervisor.add_child(actor)
 
         thread = threading.Thread(target=actor.run)
         self.threads[name] = thread
