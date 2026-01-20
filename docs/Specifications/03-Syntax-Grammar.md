@@ -298,104 +298,74 @@ type_args = type { ',' type } [',']
 type_arg = identifier '=' type
          | type ;
 
-// ============ Paths and Modules ============
+# ============ Additional Expressions and Constructs ============
 
-path = identifier { '::' identifier } ;
+decorator = '#' '[' path [ '(' decorator_args ')' ] ']' ;
+decorator_args = identifier { ',' identifier } ;
 
-module_def = 'mod' identifier '{' { item } '}'
-           | 'mod' identifier ';' ;
+use_statement = 'use' path { '::' path } [ '::' '{' imports '}' ] ';' ;
+imports = import_item { ',' import_item } [','] ;
+import_item = identifier [ 'as' identifier ] ;
 
-// ============ Struct Definition ============
+module_def = 'mod' identifier '{' { item } '}' ;
 
-struct_def = [ 'pub' ] 'struct' identifier [ type_params ]
-             [ 'where' where_clause ] struct_body ;
+closure_expr = [ '|' [ parameters ] '|' ] block
+              | [ 'move' ] '|' [ parameters ] '|' '->' type block
+              | [ 'move' ] '|' [ parameters ] '|' expression ;
 
-struct_body = '{' { field_def } '}'
-            | ';' ;
+array_expr = '[' [ expression { ',' expression } [','] ] ']' ;
 
-field_def = [ 'pub' ] identifier ':' type ';' ;
+tuple_expr = '(' expression ',' { expression } [','] ')' ;
 
-where_clause = where_predicate { ',' where_predicate } [','] ;
-where_predicate = type ':' trait_bounds
-                | lifetime ':' lifetime_bound ;
+struct_literal = path '{' [ field_inits ] [ ',' '..' expression ] '}' ;
+field_inits = field_init { ',' field_init } [','] ;
+field_init = identifier [ ':' expression ] ;
 
-lifetime_bound = lifetime { '+' lifetime } ;
+enum_literal = path '::' identifier [ '(' [ args ] ')' ]
+              | path '{' identifier [ ':' expression ] '}' ;
 
-// ============ Enum Definition ============
+spawn_expr = 'spawn' block ;
 
-enum_def = [ 'pub' ] 'enum' identifier [ type_params ]
-           [ 'where' where_clause ] '{' { variant } [','] '}' ;
+loop_expr = 'loop' block ;
 
-variant = identifier [ variant_data ] ;
-variant_data = '(' { type } [','] ')'
-             | '{' { field_def } '}' ;
+for_expr = 'for' pattern 'in' expression block ;
 
-// ============ Trait Definition ============
+while_expr = 'while' expression block ;
 
-trait_def = [ 'pub' ] 'trait' identifier [ type_params ]
-            [ ':' trait_bounds ] [ 'where' where_clause ]
-            '{' { trait_item } '}' ;
+return_expr = 'return' [ expression ] ;
 
-trait_item = function_def
-           | associated_type_def ;
+break_expr = 'break' [ identifier ] [ expression ] ;
 
-associated_type_def = 'type' identifier [ ':' trait_bounds ] ';' ;
+continue_expr = 'continue' [ identifier ] ;
 
-// ============ Impl Block ============
+macro_call = identifier '!' [ '(' macro_args ')' | '[' macro_args ']' | '{' macro_args '}' ] ;
+macro_args = token { token } ;  // Simplified
 
-impl_block = 'impl' [ type_params ] [ trait_type 'for' ] type
-             [ 'where' where_clause ] '{' { impl_item } '}' ;
+pattern = identifier
+        | '_'
+        | literal
+        | '(' pattern { ',' pattern } [','] ')'
+        | path '{' field_patterns '}'
+        | path '(' [ pattern { ',' pattern } [','] ] ')'
+        | pattern '|' pattern
+        | pattern [ 'if' expression ] ;
 
-impl_item = function_def ;
+field_patterns = field_pattern { ',' field_pattern } [','] ;
+field_pattern = identifier [ ':' pattern ] ;
 
-// ============ Actor Definition ============
+primary_type = identifier
+              | path '<' type_args '>'
+              | '(' [ type { ',' type } [','] ] ')'
+              | '[' type [ ';' expression ] ']'
+              | '&' [ 'mut' ] type
+              | '*' [ 'const' | 'mut' ] type
+              | 'dyn' trait_bounds
+              | 'fn' '(' [ type { ',' type } [','] ] ')' '->' type ;
 
-actor_def = 'actor' identifier [ type_params ]
-            [ 'where' where_clause ] '{' { function_def } '}' ;
-
-// ============ External Functions ============
-
-extern_block = 'extern' [ abi ] '{' { extern_item } '}' ;
-abi = '"' ( 'C' | 'py' | 'stdcall' ) '"' ;
-extern_item = [ decorator ] 'fn' identifier [ type_params ]
-              '(' [ parameters ] ')' [ '->' type ] ';' ;
-
-// ============ Lifetimes ============
-
-lifetime = ''' identifier ;
-
-// ============ Generic Lifetime Params ============
-
-generic_lifetime_param = lifetime [ ':' lifetime_bound ] ;
+postfix_type = { '&' | '*' } ;
 ```
 
----
-
-## 3. Operator Precedence and Associativity
-
-| Precedence  | Operator          | Associativity | Type           |
-| ----------- | ----------------- | ------------- | -------------- |
-| 1 (highest) | `()` `[]` `.`     | Left          | Postfix        |
-| 2           | `!` `-` `*` `&`   | Right         | Prefix         |
-| 3           | `*` `/` `%`       | Left          | Multiplicative |
-| 4           | `+` `-`           | Left          | Additive       |
-| 5           | `<<` `>>`         | Left          | Shift          |
-| 6           | `&`               | Left          | Bitwise AND    |
-| 7           | `^`               | Left          | Bitwise XOR    |
-| 8           | `\|`              | Left          | Bitwise OR     |
-| 9           | `<` `>` `<=` `>=` | Left          | Relational     |
-| 10          | `==` `!=`         | Left          | Equality       |
-| 11          | `&&`              | Left          | Logical AND    |
-| 12          | `\|\|`            | Left          | Logical OR     |
-| 13          | `?`               | Right         | Try            |
-| 14          | `=` `+=` `-=` etc | Right         | Assignment     |
-| 15 (lowest) | `=>`              | Right         | Match arm      |
-
----
-
-## 4. Lexer Specification (PLY compatible)
-
-### 4.1 Token List
+### 2.1 Updated Keywords
 
 ```python
 tokens = (
