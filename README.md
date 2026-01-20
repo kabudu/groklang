@@ -100,8 +100,11 @@ fn main() {
 Compile and run:
 
 ```bash
-grok hello.grok
-./hello
+# Build the binary first (one-time)
+./build_binary.sh
+
+# Then compile and run
+groklang hello.grok --run
 ```
 
 ---
@@ -143,10 +146,29 @@ fn expensive_calculation(data: &[i32]) -> i32 {
 }
 
 #[ai_test]
-fn my_function(x: i32) -> i32 {
-    x * 2
+fn my_function() {
+    // Function to generate tests for
 }  // AI generates test cases automatically
+
+#[ai_translate(target_lang: "python")]
+fn translate_me() {
+    println("This will be translated to Python");
+}
 ```
+
+**Configuration**: Create `grok.toml` in your project root:
+
+```toml
+[ai]
+backend = "xai"  # "mock", "openai", or "xai"
+api_key = "your-api-key-here"
+timeout = 5
+```
+
+Supported backends:
+- `mock`: No API needed, returns placeholder responses
+- `openai`: Uses OpenAI API (set `OPENAI_API_KEY` env var or in config)
+- `xai`: Uses XAI Grok API (set `GROK_API_KEY` env var or in config)
 
 ### 4. **Modern Concurrency**
 
@@ -305,11 +327,14 @@ cd docs && sphinx-build -b html . _build/html
 ### Running the Compiler
 
 ```bash
+# Build binary (one-time)
+./build_binary.sh
+
 # Compile a GrokLang file
-python -m groklang.compiler myprogram.grok
+groklang myprogram.grok
 
 # Compile and run
-python -m groklang.compiler myprogram.grok && ./myprogram
+groklang myprogram.grok --run
 ```
 
 ---

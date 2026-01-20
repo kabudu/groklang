@@ -107,3 +107,77 @@ class DecoratorProcessor:
             body = "// function body"
             return f"fn {ast_node.name}({params}){return_type} {{ {body} }}"
         return "// code"
+
+class OpenAiService(LlmService):
+    def __init__(self, api_key: str, model: str = "gpt-4"):
+        self.api_key = api_key
+        self.model = model
+
+    def call(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        import openai
+        openai.api_key = self.api_key
+
+        try:
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[{"role": "user", "content": self.format_prompt(request)}],
+                temperature=0.7,
+                timeout=5,
+            )
+            return {'success': True, 'output': response.choices[0].message.content}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def format_prompt(self, request: Dict[str, Any]) -> str:
+        op = request['operation']
+        code = request['input']
+
+        if op == 'optimize':
+            return f"Optimize this function for speed:\n\n{code}\n\nProvide only the optimized code."
+        elif op == 'test':
+            return f"Generate comprehensive test cases for:\n\n{code}\n\nProvide tests in GrokLang format."
+        else:
+            return code
+
+class XaiGrokService(LlmService):
+    def __init__(self, api_key: str, model: str = "grok-beta"):
+        self.api_key = api_key
+        self.model = model
+
+    def call(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        import requests  # Assuming REST API
+
+        url = "https://api.x.ai/v1/chat/completions"  # Placeholder
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": self.format_prompt(request)}],
+            "temperature": 0.7
+        }
+
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                return {'success': True, 'output': data['choices'][0]['message']['content']}
+            else:
+                return {'success': False, 'error': f"API error: {response.status_code}"}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def format_prompt(self, request: Dict[str, Any]) -> str:
+        op = request['operation']
+        code = request['input']
+
+        if op == 'optimize':
+            return f"Optimize this GrokLang function for speed:\n\n{code}\n\nProvide only the optimized GrokLang code."
+        elif op == 'test':
+            return f"Generate comprehensive test cases for this GrokLang function:\n\n{code}\n\nProvide tests in GrokLang format."
+        elif op == 'translate':
+            target = request['parameters'].get('target_lang', 'py')
+            return f"Translate this GrokLang code to {target}:\n\n{code}\n\nProvide only the translated code."
+        else:
+            return code

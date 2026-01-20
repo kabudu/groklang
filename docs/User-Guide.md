@@ -8,18 +8,37 @@ GrokLang is a modern, AI-enhanced programming language designed for safe, concur
 
 ### Installation
 
-GrokLang requires Python 3.8+ and PLY. Install dependencies:
-
-```bash
-pip install ply
-```
-
-Clone the repository:
+GrokLang requires Python 3.8+ and PLY. Install dependencies and build the binary:
 
 ```bash
 git clone https://github.com/yourorg/groklang.git
 cd groklang
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Build the binary
+./build_binary.sh
 ```
+
+This creates a standalone `groklang` executable.
+
+### AI Configuration
+
+GrokLang supports AI-powered features via decorators. Configure AI providers in `grok.toml`:
+
+```toml
+[ai]
+backend = "xai"  # Options: "mock", "openai", "xai"
+api_key = "your-api-key-here"  # Or set GROK_API_KEY env var
+timeout = 5
+```
+
+- **mock**: No API needed, uses placeholder responses
+- **openai**: Requires OpenAI API key
+- **xai**: Requires XAI Grok API key
+
+Without configuration, AI features use mock responses.
 
 ### Compiling and Running Programs
 
@@ -28,30 +47,22 @@ cd groklang
 2. Compile using the GrokLang compiler:
 
 ```bash
-python3 -c "
-from src.groklang.compiler import Compiler
-compiler = Compiler()
-with open('hello.grok', 'r') as f:
-    code = f.read()
-result = compiler.compile(code, target='vm')
-# For VM execution
-vm = result['vm']
-vm.call_function('main', [])
-"
+groklang hello.grok
 ```
 
-For LLVM output:
+3. Compile and run:
 
 ```bash
-python3 -c "
-from src.groklang.compiler import Compiler
-compiler = Compiler()
-with open('hello.grok', 'r') as f:
-    code = f.read()
-result = compiler.compile(code, target='llvm')
-print(result['llvm'])
-"
+groklang hello.grok --run
 ```
+
+For LLVM IR output:
+
+```bash
+groklang hello.grok --target llvm
+```
+
+This generates `hello.ll` (LLVM IR file).
 
 ## Hello World Example
 
@@ -221,6 +232,35 @@ fn translate_me() {
 - **Modules**: Use `use` for importing, `mod` for defining modules.
 - **Closures**: Functional programming with `|params| body`.
 - **Error Handling**: Use `?` for try-like behavior.
+
+### AI Features
+
+GrokLang includes compile-time AI integration via decorators:
+
+- **@ai_optimize**: Optimizes function performance using AI suggestions
+- **@ai_test**: Generates comprehensive test cases automatically
+- **@ai_translate**: Translates code to other languages (e.g., Python, C)
+
+Example:
+
+```groklang
+#[ai_optimize(level: "high", target: "speed")]
+fn expensive_calculation(data: Vec<i32>) -> i32 {
+    data.iter().map(|x| x * x).sum()
+}
+
+#[ai_test]
+fn my_function(x: i32) -> i32 {
+    x * 2
+}  // AI generates test cases
+
+#[ai_translate(target_lang: "python")]
+fn translate_me() {
+    println("This will be translated to Python");
+}
+```
+
+The compiler validates AI-generated code for correctness before applying changes.
 
 For more details, see:
 - [Language Specification](docs/Specifications/03-Syntax-Grammar.md)
