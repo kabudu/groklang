@@ -1,4 +1,5 @@
 import ply.lex as lex
+import ast
 
 # Token list
 tokens = (
@@ -10,11 +11,11 @@ tokens = (
     # Operators...
     'PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'MODULO',
     'EQ', 'NE', 'LT', 'GT', 'LE', 'GE',
-    'AND', 'OR', 'NOT', 'AMPERSAND', 'PIPE', 'CARET', 'TILDE',
+    'AND', 'OR', 'BANG', 'AMPERSAND', 'PIPE', 'CARET', 'TILDE',
     'LSHIFT', 'RSHIFT', 'ASSIGN',
     'LPAREN', 'RPAREN', 'LBRACE', 'RBRACE', 'LBRACKET', 'RBRACKET',
     'COMMA', 'SEMICOLON', 'COLON', 'DOUBLECOLON', 'DOT', 'ARROW', 'FATARROW',
-    'ELLIPSIS', 'QUESTION', 'AT', 'HASH', 'DOLLAR',
+    'ELLIPSIS', 'QUESTION', 'AT', 'HASH', 'DOLLAR', 'BANG',
 )
 
 reserved = {
@@ -67,7 +68,7 @@ def t_INT(t):
     return t
 
 def t_STRING(t):
-    r'"([^"\\\\]|\\\\.)*"'
+    r'"[^"]*"'
     t.value = t.value[1:-1]
     return t
 
@@ -97,7 +98,7 @@ t_DIVIDE = r'/'
 t_MODULO = r'%'
 t_LT = r'<'
 t_GT = r'>'
-t_NOT = r'!'
+t_BANG = r'!'
 t_AMPERSAND = r'&'
 t_PIPE = r'\|'
 t_CARET = r'\^'

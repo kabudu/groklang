@@ -7,13 +7,64 @@ from groklang.compiler import Compiler
 
 def main():
     parser = argparse.ArgumentParser(description="GrokLang Compiler")
-    parser.add_argument("file", help="GrokLang source file (.grok)")
-    parser.add_argument("--target", choices=["vm", "llvm"], default="vm",
-                        help="Compilation target (default: vm)")
-    parser.add_argument("--run", action="store_true",
-                        help="Execute the program after compilation")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Compile command (default)
+    compile_parser = subparsers.add_parser("compile", help="Compile GrokLang source")
+    compile_parser.add_argument("file", help="GrokLang source file (.grok)")
+    compile_parser.add_argument("--target", choices=["vm", "llvm"], default="vm",
+                                help="Compilation target (default: vm)")
+    compile_parser.add_argument("--run", action="store_true",
+                                help="Execute the program after compilation")
+
+    # LSP command
+    lsp_parser = subparsers.add_parser("lsp", help="Start Language Server Protocol server")
+
+    # Debug command
+    debug_parser = subparsers.add_parser("debug", help="Debug GrokLang source")
+    debug_parser.add_argument("file", help="GrokLang source file (.grok)")
+
+    # Package commands
+    new_parser = subparsers.add_parser("new", help="Create a new GrokLang project")
+    new_parser.add_argument("name", help="Project name")
+
+    install_parser = subparsers.add_parser("install", help="Install project dependencies")
+
+    build_parser = subparsers.add_parser("build", help="Build the project")
 
     args = parser.parse_args()
+
+    if args.command == "lsp":
+        from groklang.language_server import server
+        import asyncio
+        asyncio.run(server.start_io())
+        return
+
+    if args.command == "debug":
+        from groklang.debugger import debug_file
+        debug_file(args.file)
+        return
+
+    if args.command == "new":
+        from groklang.package_manager import new_project
+        new_project(args.name)
+        return
+
+    if args.command == "install":
+        from groklang.package_manager import install_deps
+        install_deps()
+        return
+
+    if args.command == "build":
+        from groklang.package_manager import build_project
+        build_project()
+        return
+
+    # For backward compatibility, assume compile if no command
+    if args.command is None:
+        # Re-parse as compile
+        compile_parser.parse_args(sys.argv[1:], namespace=args)
+        args.command = "compile"
 
     # Read source file
     try:

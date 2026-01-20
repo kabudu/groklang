@@ -9,12 +9,23 @@ class TypeChecker:
         self.collector = ConstraintCollector()
         self.unifier = Unifier()
         self.type_env = TypeEnvironment()
+        self.errors = []
 
     def check(self, ast) -> List[Tuple[str, Type]]:
         """Full type check pass"""
+        self.errors = []  # Reset
         self.check_program(ast)
-        substitution = self.unifier.unify(self.collector.constraints)
-        return [(var, subst) for var, subst in substitution.items()]
+        try:
+            substitution = self.unifier.unify(self.collector.constraints)
+            return [(var, subst) for var, subst in substitution.items()]
+        except Exception as e:
+            self.errors.append(f"Type unification failed: {e}. Suggestion: Check type annotations for consistency.")
+            return []
+
+    def add_error(self, message, suggestion=None):
+        if suggestion:
+            message += f" Suggestion: {suggestion}"
+        self.errors.append(message)
 
     def check_program(self, program):
         for item in program[1]:  # program is ('Program', items)

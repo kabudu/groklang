@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from .ir import IRFunction, IRInstruction
+from .stdlib import Vec, HashMap, println, readln, spawn
 
 class RuntimeProfiler:
     def __init__(self):
@@ -20,6 +21,14 @@ class BytecodeVM:
         self.variables: Dict[str, Any] = {}
         self.functions: Dict[str, IRFunction] = {}
         self.profiler = RuntimeProfiler()
+        # Load stdlib
+        self.variables.update({
+            'Vec': Vec,
+            'HashMap': HashMap,
+            'println': println,
+            'readln': readln,
+            'spawn': spawn,
+        })
 
     def load_program(self, functions: List[IRFunction]):
         for func in functions:

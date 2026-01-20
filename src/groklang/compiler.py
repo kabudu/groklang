@@ -12,7 +12,9 @@ from .module_system import ModuleResolver, PrivacyChecker
 from .jit_compiler import JITCompiler
 from .advanced_gc import AdvancedGC
 from .zero_cost_optimizer import ZeroCostOptimizer
+from .security import SandboxRunner, FormalVerifier
 from .deadlock_detector import DeadlockDetector
+from .optimizer import Optimizer
 
 class Compiler:
     def __init__(self):
@@ -27,6 +29,7 @@ class Compiler:
         self.jit_compiler = JITCompiler()
         self.gc = AdvancedGC()
         self.zero_cost_optimizer = ZeroCostOptimizer(self.llm_service)
+        self.optimizer = Optimizer(None)  # Will set ast later
         self.codegen = CodeGenerator()
         self.vm = BytecodeVM()
         self.llvm_gen = LLVMGenerator()
@@ -81,6 +84,7 @@ class Compiler:
 
         # Type check
         substitutions = self.type_checker.check(ast)
+        errors = self.type_checker.errors
 
         # Generate code
         if target == 'vm':
@@ -90,7 +94,7 @@ class Compiler:
                 'ast': ast,
                 'ir': ir_functions,
                 'vm': self.vm,
-                'errors': []
+                'errors': errors
             }
         elif target == 'llvm':
             ir_functions = self.codegen.generate(ast)

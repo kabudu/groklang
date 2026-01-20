@@ -62,6 +62,66 @@ class Parser:
         """expression : assignment_expr"""
         p[0] = p[1]
 
+    def p_expr(self, p):
+        """expr : assignment_expr
+                  | if_expr
+                  | match_expr
+                  | let_statement
+                  | return_expr
+                  | break_expr
+                  | continue_expr
+                  | block"""
+        p[0] = p[1]
+
+    def p_if_expr(self, p):
+        """if_expr : IF expression block
+                    | IF expression block ELSE block
+                    | IF expression block ELSE if_expr"""
+        if len(p) == 4:
+            p[0] = IfExpr(p[2], p[3], None, p.lineno(1), 1)
+        elif len(p) == 6:
+            p[0] = IfExpr(p[2], p[3], p[5], p.lineno(1), 1)
+        else:
+            p[0] = p[5]  # else if
+
+    def p_match_expr(self, p):
+        """match_expr : MATCH expression LBRACE match_arms RBRACE"""
+        p[0] = MatchExpr(p[2], p[4], p.lineno(1), 1)
+
+    def p_match_arms(self, p):
+        """match_arms : match_arm
+                       | match_arms COMMA match_arm"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            p[1].append(p[3])
+            p[0] = p[1]
+
+    def p_match_arm(self, p):
+        """match_arm : pattern FATARROW expression"""
+        p[0] = (p[1], p[3])
+
+    def p_let_statement(self, p):
+        """let_statement : LET ID ASSIGN expression
+                          | LET MUT ID ASSIGN expression"""
+        if len(p) == 5:
+            p[0] = LetStmt(p[2], False, p[4], p.lineno(1), 1)
+        else:
+            p[0] = LetStmt(p[3], True, p[5], p.lineno(1), 1)
+
+    def p_block(self, p):
+        """block : LBRACE statements RBRACE"""
+        p[0] = Block(p[2], p.lineno(1), 1)
+
+    def p_statements(self, p):
+        """statements : 
+                       | statements expr SEMICOLON"""
+        if len(p) == 1:
+            p[0] = []
+        else:
+            p[1].append(p[2])
+            p[0] = p[1]
+
     def p_assignment_expr(self, p):
         """assignment_expr : logical_or_expr
                             | logical_or_expr ASSIGN assignment_expr"""
@@ -127,7 +187,7 @@ class Parser:
 
     def p_unary_expr(self, p):
         """unary_expr : postfix_expr
-                       | NOT unary_expr
+                       | BANG unary_expr
                        | MINUS unary_expr
                        | AMPERSAND unary_expr"""
         if len(p) == 2:
@@ -360,8 +420,7 @@ class Parser:
                 | trait_def
                 | impl_block
                 | use_statement
-                | module_def
-                | macro_def"""
+                | module_def"""
         if len(p) == 3 and p[1] == 'pub':  # visibility item
             item = p[2]
             item.visibility = 'pub'
@@ -419,10 +478,9 @@ class Parser:
                          | struct_literal
                          | enum_literal
                          | spawn_expr
-                         | return_expr
-                         | break_expr
-                         | continue_expr
-                         | macro_call"""
+                          | return_expr
+                          | break_expr
+                          | continue_expr"""
         if p[1] in ('true', 'false'):
             p[0] = BoolLiteral(p[1] == 'true', p.lineno(1), 1)
         elif isinstance(p[1], (int, float)):
@@ -540,33 +598,6 @@ class Parser:
         p[0] = ('Spawn', p[2])
 
     # Macros
-    def p_macro_def(self, p):
-        """macro_def : MACRO_RULES MACRO ID macro_rules"""
-        p[0] = ('MacroDef', p[3], p[4])
-
-    def p_macro_rules(self, p):
-        """macro_rules : LPAREN macro_rule_list RPAREN"""
-        p[0] = p[2]
-
-    def p_macro_rule_list(self, p):
-        """macro_rule_list : macro_rule
-                            | macro_rule_list COMMA macro_rule"""
-        if len(p) == 2:
-            p[0] = [p[1]]
-        else:
-            p[1].append(p[3])
-            p[0] = p[1]
-
-    def p_macro_rule(self, p):
-        """macro_rule : LPAREN pattern RPAREN FATARROW LPAREN expression RPAREN"""
-        p[0] = ('MacroRule', p[2], p[5])
-
-    def p_macro_call(self, p):
-        """macro_call : ID BANG LPAREN args RPAREN
-                       | ID BANG LBRACKET args RBRACKET
-                       | ID BANG LBRACE args RBRACE"""
-        p[0] = ('MacroCall', p[1], p[4])
-
     # Update patterns for more complex matching
     def p_pattern(self, p):
         """pattern : ID

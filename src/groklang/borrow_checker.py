@@ -36,11 +36,11 @@ class BorrowTracker:
 
         borrows = self.borrows[addr]
         if is_mutable:
-            # Mutable access requires no other borrows
-            if len(borrows) > 0:
-                raise RuntimeError(f"Mutable access not allowed while borrows exist at {addr}")
+            # Mutable access requires no immutable borrows
+            if any(b[0] == 'immutable' for b in borrows):
+                raise RuntimeError(f"Mutable access not allowed while immutable borrows exist at {addr}")
         else:
-            # Immutable access OK if no mutable borrows
+            # Immutable access denied if mutable borrows exist
             if any(b[0] == 'mutable' for b in borrows):
                 raise RuntimeError(f"Immutable access not allowed while mutable borrow exists at {addr}")
         return True

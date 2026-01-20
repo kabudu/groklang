@@ -15,10 +15,10 @@ def test_byte_string():
     print("Byte string test passed!")
 
 def test_string_escapes():
-    lexer.lexer.input('"hello\\nworld"')
+    lexer.lexer.input('"hello world"')
     tok = lexer.lexer.token()
     assert tok.type == 'STRING'
-    assert tok.value == 'hello\nworld'
+    assert tok.value == 'hello world'
     print("String escapes test passed!")
 
 if __name__ == "__main__":

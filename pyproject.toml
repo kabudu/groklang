@@ -24,6 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "ply>=3.11",
+    "pygls>=1.0.0",
 ]
 
 [project.scripts]

@@ -105,6 +105,18 @@ Compile and run:
 
 # Then compile and run
 grok hello.grok --run
+
+# Debug interactively
+grok debug hello.grok
+
+# Create a new project
+grok new my_project
+
+# Install dependencies
+grok install
+
+# Build project
+grok build
 ```
 
 ---
