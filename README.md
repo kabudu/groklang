@@ -119,6 +119,9 @@ Write less, infer more. GrokLang automatically deduces types:
 let x = 42;           // inferred: i32
 let y = x + 1.5;      // inferred: f32
 let z = vec![1, 2];   // inferred: Vec<i32>
+let s = "hello";      // string literal
+let r = r"C:\raw";    // raw string
+let b = b"bytes";     // byte string
 ```
 
 ### 2. **Memory Safety Without Garbage Collection**

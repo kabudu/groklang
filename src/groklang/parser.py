@@ -392,6 +392,8 @@ class Parser:
         """primary_expr : INT
                          | FLOAT
                          | STRING
+                         | RAW_STRING
+                         | BYTE_STRING
                          | TRUE
                          | FALSE
                          | ID
@@ -419,6 +421,10 @@ class Parser:
                 p[0] = IntLiteral(p[1], p.lineno(1), 1)
             else:
                 p[0] = FloatLiteral(p[1], p.lineno(1), 1)
+        elif isinstance(p[1], str):
+            p[0] = StringLiteral(p[1], p.lineno(1), 1)
+        elif isinstance(p[1], bytes):
+            p[0] = ByteStringLiteral(p[1], p.lineno(1), 1)
         elif p[1] == 'self':
             p[0] = Identifier('self', p.lineno(1), 1)
         elif p[1] == 'Self':

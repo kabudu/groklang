@@ -22,6 +22,11 @@ class StringLiteral(AstNode):
         super().__init__(line, col)
         self.value = value
 
+class ByteStringLiteral(AstNode):
+    def __init__(self, value: bytes, line: int = 0, col: int = 0):
+        super().__init__(line, col)
+        self.value = value
+
 class BoolLiteral(AstNode):
     def __init__(self, value: bool, line: int, col: int):
         super().__init__(line, col)

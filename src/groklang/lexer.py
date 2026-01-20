@@ -2,7 +2,7 @@ import ply.lex as lex
 
 # Token list
 tokens = (
-    'INT', 'FLOAT', 'STRING', 'CHAR', 'TRUE', 'FALSE', 'ID', 'UNDERSCORE',
+    'INT', 'FLOAT', 'STRING', 'RAW_STRING', 'BYTE_STRING', 'CHAR', 'TRUE', 'FALSE', 'ID', 'UNDERSCORE',
     'FN', 'LET', 'MUT', 'IF', 'ELSE', 'MATCH', 'FOR', 'WHILE', 'LOOP', 'IN',
     'BREAK', 'CONTINUE', 'RETURN', 'STRUCT', 'ENUM', 'TRAIT', 'IMPL', 'USE',
     'MOD', 'PUB', 'SELF', 'SELFTYPE', 'WHERE', 'TYPE', 'AS', 'UNSAFE',
@@ -32,6 +32,17 @@ reserved = {
 }
 
 # Token rules
+def t_RAW_STRING(t):
+    r'r"([^"])*"'
+    t.value = t.value[2:-1]  # Remove r"
+    return t
+
+def t_BYTE_STRING(t):
+    r'b"([^"\\\\]|\\\\.)*"'
+    t.value = t.value[2:-1]  # Remove b"
+    t.value = t.value.encode('utf-8')  # Convert to bytes
+    return t
+
 def t_ID(t):
     r'[a-zA-Z_][a-zA-Z_0-9]*'
     t.type = reserved.get(t.value, 'ID')

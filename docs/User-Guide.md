@@ -98,15 +98,25 @@ To run:
 
 ```groklang
 fn example() {
-    let x: i32 = 42;  // Explicit type
-    let y = 3.14;     // Inferred type (f64)
-    let name = "Grok"; // Inferred str
-    let flag = true;   // Inferred bool
+    let x: i32 = 42;           // Explicit type
+    let y = 3.14;              // Inferred type (f64)
+    let name = "Grok";         // String literal
+    let raw = r"C:\path\to\file"; // Raw string (no escapes)
+    let bytes = b"binary data";   // Byte string
+    let flag = true;            // Inferred bool
 
     mut z = 0;        // Mutable variable
     z = z + 1;
 }
 ```
+
+#### Advanced Literals
+
+GrokLang supports several string literal types:
+
+- **String literals**: `"hello\nworld"` with escape sequences (\n, \t, \", \\)
+- **Raw strings**: `r"C:\path\to\file"` (no escape processing)
+- **Byte strings**: `b"binary data"` (produces bytes object)
 
 ### Functions
 
