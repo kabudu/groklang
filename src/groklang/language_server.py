@@ -2,7 +2,6 @@
 """Language Server for GrokLang IDE support using LSP"""
 
 from pygls.server import LanguageServer
-from pygls.protocol import InitializeResult, InitializeParams
 from pygls.workspace import Document
 from lsprotocol.types import (
     TEXT_DOCUMENT_DID_OPEN,
@@ -28,7 +27,7 @@ from lsprotocol.types import (
     Range,
 )
 from groklang import parser as parser_mod
-from groklang import type_checker
+from groklang.type_checker import TypeChecker
 
 KEYWORDS = [
     "fn", "let", "if", "else", "while", "for", "return", "struct", "enum",
@@ -40,9 +39,8 @@ class GrokLangLanguageServer(LanguageServer):
     def __init__(self):
         super().__init__("GrokLang Language Server", "0.1.0")
 
-    async def initialize(self, params: InitializeParams) -> InitializeResult:
-        result = InitializeResult(capabilities=self.server_capabilities)
-        return result
+    # async def initialize(self, params):
+    #     return {'capabilities': {}}
 
 server = GrokLangLanguageServer()
 
@@ -69,9 +67,10 @@ async def validate_document(doc: Document):
     # Type check if no parse errors
     if ast and not parser_mod.parser.errors:
         try:
-            type_checker.check(ast)
-            if type_checker.errors:
-                for error in type_checker.errors:
+            checker = TypeChecker()
+            checker.check(ast)
+            if checker.errors:
+                for error in checker.errors:
                     diagnostics.append(create_diagnostic(error, DiagnosticSeverity.Error))
         except Exception as e:
             diagnostics.append(create_diagnostic(str(e), DiagnosticSeverity.Error))
@@ -111,5 +110,4 @@ async def references(params: ReferenceParams) -> List[Location]:
     return [Location(uri=params.text_document.uri, range=Range(start=Position(line=1, character=0), end=Position(line=1, character=3)))]
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(server.start_io())
+    server.start_io()

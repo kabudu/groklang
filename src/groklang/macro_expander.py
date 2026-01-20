@@ -27,10 +27,11 @@ class MacroExpander:
 
     def _substitute_template(self, template, pattern, args):
         """Substitute pattern variables in template"""
-        # Basic substitution: replace $0, $1, etc. with args
         if isinstance(template, str):
-            for i, arg in enumerate(args):
-                template = template.replace(f'${i}', str(arg))
+            # Map pattern vars to args
+            for i, var in enumerate(pattern):
+                if i < len(args):
+                    template = template.replace(f'${var}', str(args[i]))
             return template
         elif isinstance(template, tuple):
             return tuple(self._substitute_template(t, pattern, args) for t in template)

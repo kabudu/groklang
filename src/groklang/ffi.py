@@ -4,30 +4,27 @@ from src.groklang.types import Type, PrimitiveType, GenericType
 class TypeMarshaler:
     def grok_to_c(self, value: Any, type_: Type) -> Any:
         """Convert GrokLang value to C-compatible with robustness"""
-        try:
-            if isinstance(type_, PrimitiveType):
-                if type_.name == "i32":
-                    if not isinstance(value, (int, float)):
-                        raise TypeError(f"Expected numeric for i32, got {type(value)}")
-                    if not (-2**31 <= value < 2**31):
-                        raise ValueError(f"Value {value} out of i32 range")
-                    return int(value)
-                elif type_.name == "f64":
-                    return float(value)
-                elif type_.name == "str":
-                    if not isinstance(value, str):
-                        raise TypeError(f"Expected str, got {type(value)}")
-                    return value.encode('utf-8') + b'\x00'
-                elif type_.name == "bool":
-                    return 1 if value else 0
-            elif isinstance(type_, GenericType):
-                if type_.name == "Vec":
-                    if not hasattr(value, '__len__'):
-                        raise TypeError(f"Expected iterable for Vec, got {type(value)}")
-                    return (len(value), list(value))  # (len, array)
-            return value
-        except Exception as e:
-            raise RuntimeError(f"FFI marshaling error in grok_to_c: {e}")
+        if isinstance(type_, PrimitiveType):
+            if type_.name == "i32":
+                if not isinstance(value, (int, float)):
+                    raise TypeError(f"Expected numeric for i32, got {type(value)}")
+                if not (-2**31 <= value < 2**31):
+                    raise ValueError(f"Value {value} out of i32 range")
+                return int(value)
+            elif type_.name == "f64":
+                return float(value)
+            elif type_.name == "str":
+                if not isinstance(value, str):
+                    raise TypeError(f"Expected str, got {type(value)}")
+                return value.encode('utf-8') + b'\x00'
+            elif type_.name == "bool":
+                return 1 if value else 0
+        elif isinstance(type_, GenericType):
+            if type_.name == "Vec":
+                if not hasattr(value, '__len__'):
+                    raise TypeError(f"Expected iterable for Vec, got {type(value)}")
+                return (len(value), list(value))  # (len, array)
+        return value
 
     def c_to_grok(self, value: Any, type_: Type) -> Any:
         """Convert C value back to GrokLang with validation"""

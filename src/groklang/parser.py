@@ -487,7 +487,6 @@ class Parser:
     def p_field_init(self, p):
         """field_init : ID COLON expression"""
         p[0] = (p[1], p[3])
-            p[0] = p[1]
 
 
     def p_enum_literal(self, p):

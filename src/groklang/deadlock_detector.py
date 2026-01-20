@@ -60,25 +60,10 @@ class DeadlockDetector:
         return {1: 'low', 2: 'medium', 3: 'high'}[combined]
 
     def _ai_deadlock_analysis(self, code: str) -> Dict[str, Any]:
-        """Use AI to detect potential deadlocks in code"""
-        prompt = f"""
-        Analyze the following GrokLang code for potential deadlocks in concurrency (actors, channels, threads):
-
-        {code}
-
-        Look for:
-        - Circular waits
-        - Resource starvation
-        - Improper channel usage
-        - Actor dependencies
-
-        Provide a risk assessment (low/medium/high) and recommendations.
-        """
-        
-        request = {
-            'operation': 'analyze',
-            'input': code,
-            'parameters': {'analysis_type': 'deadlock'}
+        # Mock for now
+        return {
+            'risk_level': 'medium',
+            'recommendations': ['Add timeouts to channel operations']
         }
         
         response = self.llm_service.call(request)
