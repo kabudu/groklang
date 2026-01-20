@@ -469,7 +469,7 @@ groklang/
 | **Type System**      | Complete | Full ML-style Hindley-Milner inference      |
 | **Memory Safety**    | Complete | Borrow checker + optional AI-GC             |
 | **Concurrency**      | Complete | Threads + actors + AI deadlock detection + supervision |
-| **AI Integration**   | Complete | Decorators + runtime profiling + adaptive compilation + macros |
+| **AI Integration**   | Complete | Decorators + runtime profiling + adaptive compilation + macros + modules |
 | **FFI**              | Complete | Python + C with type marshaling             |
 | **Standard Library** | Complete | Collections, I/O, threading, sync           |
 | **Grammar**          | Complete | EBNF + PLY-compatible lexer/parser          |

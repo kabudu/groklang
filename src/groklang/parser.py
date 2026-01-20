@@ -352,7 +352,8 @@ class Parser:
 
     # Update item to include decorators and use
     def p_item(self, p):
-        """item : decorator item
+        """item : visibility item
+                | decorator item
                 | function_def
                 | struct_def
                 | enum_def
@@ -361,12 +362,20 @@ class Parser:
                 | use_statement
                 | module_def
                 | macro_def"""
-        if len(p) == 3:  # decorator item
+        if len(p) == 3 and p[1] == 'pub':  # visibility item
+            item = p[2]
+            item.visibility = 'pub'
+            p[0] = item
+        elif len(p) == 3:  # decorator item
             item = p[2]
             item.decorators.append(p[1][1])  # Add decorator name
             p[0] = item
         else:
             p[0] = p[1]
+
+    def p_visibility(self, p):
+        """visibility : PUB"""
+        p[0] = p[1]
 
     # Use statement
     def p_use_statement(self, p):

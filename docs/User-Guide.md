@@ -297,6 +297,29 @@ fn main() {
 
 Macros are expanded at compile-time, allowing code generation and syntactic sugar.
 
+### Modules and Privacy
+
+GrokLang organizes code into modules with privacy controls:
+
+```groklang
+// module.grok
+pub fn public_func() { }
+fn private_func() { }
+
+pub struct PublicStruct { }
+
+// main.grok
+mod my_module;
+
+use my_module::public_func;
+use my_module::{PublicStruct, another_item};
+```
+
+- `pub`: Makes items accessible from other modules
+- `mod`: Defines a module
+- `use`: Imports public items from modules
+- Privacy is enforced at compile-time
+
 ### Concurrency Safety
 
 GrokLang provides AI-powered deadlock detection and actor supervision:

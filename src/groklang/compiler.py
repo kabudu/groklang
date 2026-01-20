@@ -8,6 +8,7 @@ from .config import config
 from .deadlock_detector import DeadlockDetector
 from .runtime_ai import RuntimeAIOptimizer
 from .macro_expander import MacroExpander
+from .module_system import ModuleResolver, PrivacyChecker
 from .deadlock_detector import DeadlockDetector
 
 class Compiler:
@@ -18,6 +19,8 @@ class Compiler:
         self.deadlock_detector = DeadlockDetector(self.llm_service) if config.deadlock_detection else None
         self.runtime_ai = RuntimeAIOptimizer(self.llm_service, BytecodeVM().profiler)
         self.macro_expander = MacroExpander()
+        self.module_resolver = ModuleResolver()
+        self.privacy_checker = PrivacyChecker(self.module_resolver)
         self.codegen = CodeGenerator()
         self.vm = BytecodeVM()
         self.llvm_gen = LLVMGenerator()
@@ -42,6 +45,17 @@ class Compiler:
             raise SyntaxError(f"Parse errors: {parser.parser.errors}")
         if ast is None or not isinstance(ast, tuple) or len(ast) < 2:
             raise SyntaxError("Failed to parse code")
+
+        # Process modules and privacy
+        if isinstance(ast, tuple) and len(ast) > 1:
+            for item in ast[1]:
+                if isinstance(item, tuple) and item[0] == 'Module':
+                    self.module_resolver.define_module(item[1], item[2])
+        
+        # Check privacy
+        privacy_errors = self.privacy_checker.check_privacy(ast)
+        if privacy_errors:
+            raise SyntaxError(f"Privacy errors: {privacy_errors}")
 
         # Expand macros
         ast = self.macro_expander.expand_ast(ast)

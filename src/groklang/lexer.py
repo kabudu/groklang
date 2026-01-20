@@ -28,7 +28,7 @@ reserved = {
     'type': 'TYPE', 'as': 'AS', 'unsafe': 'UNSAFE',
     'extern': 'EXTERN', 'const': 'CONST', 'static': 'STATIC',
     'macro': 'MACRO', 'macro_rules': 'MACRO_RULES', 'ai': 'AI', 'actor': 'ACTOR', 'spawn': 'SPAWN',
-    'move': 'MOVE', 'in': 'IN', '_': 'UNDERSCORE',
+    'move': 'MOVE', 'in': 'IN', 'pub': 'PUB', '_': 'UNDERSCORE',
 }
 
 # Token rules
