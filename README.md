@@ -474,7 +474,7 @@ groklang/
 | **Standard Library** | Complete | Collections, I/O, threading, sync           |
 | **Grammar**          | Complete | EBNF + PLY-compatible lexer/parser          |
 | **Runtime**          | Complete | Stack + heap allocation, ref counting, VM  |
-| **Code Generation**  | Complete | IR generation, LLVM native executable compilation |
+| **Code Generation**  | Complete | IR generation, LLVM native executable compilation, JIT |
 
 ---
 

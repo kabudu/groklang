@@ -9,6 +9,9 @@ from .deadlock_detector import DeadlockDetector
 from .runtime_ai import RuntimeAIOptimizer
 from .macro_expander import MacroExpander
 from .module_system import ModuleResolver, PrivacyChecker
+from .jit_compiler import JITCompiler
+from .advanced_gc import AdvancedGC
+from .zero_cost_optimizer import ZeroCostOptimizer
 from .deadlock_detector import DeadlockDetector
 
 class Compiler:
@@ -21,6 +24,9 @@ class Compiler:
         self.macro_expander = MacroExpander()
         self.module_resolver = ModuleResolver()
         self.privacy_checker = PrivacyChecker(self.module_resolver)
+        self.jit_compiler = JITCompiler()
+        self.gc = AdvancedGC()
+        self.zero_cost_optimizer = ZeroCostOptimizer(self.llm_service)
         self.codegen = CodeGenerator()
         self.vm = BytecodeVM()
         self.llvm_gen = LLVMGenerator()
@@ -46,6 +52,9 @@ class Compiler:
         if ast is None or not isinstance(ast, tuple) or len(ast) < 2:
             raise SyntaxError("Failed to parse code")
 
+        # Expand macros
+        ast = self.macro_expander.expand_ast(ast)
+
         # Process modules and privacy
         if isinstance(ast, tuple) and len(ast) > 1:
             for item in ast[1]:
@@ -57,11 +66,11 @@ class Compiler:
         if privacy_errors:
             raise SyntaxError(f"Privacy errors: {privacy_errors}")
 
-        # Expand macros
-        ast = self.macro_expander.expand_ast(ast)
-
         # Process decorators
         ast = self.decorator_processor.process_decorators(ast)
+
+        # Zero-cost optimizations
+        code = self.zero_cost_optimizer.optimize_abstractions(code)
 
         # Deadlock detection
         if self.deadlock_detector:
@@ -73,12 +82,34 @@ class Compiler:
         # Type check
         substitutions = self.type_checker.check(ast)
 
-        # Generate code (disabled for now)
+        # Generate code
         if target == 'vm':
+            ir_functions = self.codegen.generate(ast)
+            self.vm.load_program(ir_functions)
             return {
                 'ast': ast,
-                'ir': [],
-                'vm': None,
+                'ir': ir_functions,
+                'vm': self.vm,
+                'errors': []
+            }
+        elif target == 'llvm':
+            ir_functions = self.codegen.generate(ast)
+            llvm_code = self.llvm_gen.generate(ir_functions)
+            return {
+                'ast': ast,
+                'ir': ir_functions,
+                'llvm': llvm_code,
+                'errors': []
+            }
+        elif target == 'jit':
+            ir_functions = self.codegen.generate(ast)
+            llvm_code = self.llvm_gen.generate(ir_functions)
+            jit_result = self.jit_compiler.compile_and_run(llvm_code)
+            return {
+                'ast': ast,
+                'ir': ir_functions,
+                'llvm': llvm_code,
+                'jit_result': jit_result,
                 'errors': []
             }
         elif target == 'llvm':

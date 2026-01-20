@@ -389,6 +389,30 @@ deadlock_detection = true
 
 The compiler validates AI-generated code for correctness before applying changes.
 
+### Performance Features
+
+GrokLang includes advanced performance optimizations:
+
+- **JIT Compilation**: Just-in-time compilation for dynamic performance
+- **Advanced GC**: Mark-sweep garbage collection with root tracking
+- **Zero-Cost Abstractions**: AI-driven elimination of abstraction overhead
+
+```groklang
+// JIT compilation
+grok program.grok --target jit
+
+// Advanced GC handles memory automatically
+let data = vec![1, 2, 3];  // Efficient memory management
+
+// Zero-cost abstractions
+trait Iterator<T> {
+    fn next(self) -> Option<T>;
+}
+// No runtime overhead for trait usage
+```
+
+Performance features are automatically applied during compilation and runtime.
+
 ### Runtime AI Features
 
 GrokLang supports dynamic runtime optimization:
