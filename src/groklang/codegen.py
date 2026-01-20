@@ -32,6 +32,11 @@ class CodeGenerator:
             block.instructions.append(IRInstruction("PUSH_BOOL", [expr.value]))
         elif isinstance(expr, Identifier):
             block.instructions.append(IRInstruction("LOAD_VAR", [expr.name]))
+        elif isinstance(expr, tuple) and expr[0] == 'Let':
+            # Let statement
+            var_name, var_expr = expr[1], expr[3]
+            self.gen_expr(var_expr, block)
+            block.instructions.append(IRInstruction("STORE_VAR", [var_name]))
         elif isinstance(expr, BinaryOp):
             self.gen_expr(expr.left, block)
             self.gen_expr(expr.right, block)

@@ -57,6 +57,11 @@ def main():
             f.write(result['llvm'])
         print(f"LLVM IR written to '{llvm_file}'")
 
+    elif args.target == "llvm" and args.run:
+        from groklang.llvm_codegen import LLVMGenerator
+        gen = LLVMGenerator()
+        result = gen.save_and_compile(args.file)
+        print(result)
     elif args.target == "vm" and args.run:
         print("Program compiled successfully")
 

@@ -74,7 +74,7 @@ class ConstraintCollector:
 
         elif isinstance(expr, Block):
             if expr.statements:
-                for stmt in expr.statements[:-1]:
+                for stmt in expr.statements:
                     if isinstance(stmt, tuple) and stmt[0] == 'Let':
                         # Let statement
                         var_name, var_expr = stmt[1], stmt[3]
@@ -83,8 +83,8 @@ class ConstraintCollector:
                     else:
                         # Expression statement
                         self.collect_expr(stmt, env)
-                # Return type of last statement
-                return self.collect_expr(expr.statements[-1], env)
+                # Blocks return unit (no last expression type)
+                return PrimitiveType("unit")
             else:
                 return PrimitiveType("unit")
 

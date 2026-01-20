@@ -39,9 +39,8 @@ class Compiler:
         # Process decorators
         ast = self.decorator_processor.process_decorators(ast)
 
-        # Type check (disabled for now)
-        # substitutions = self.type_checker.check(ast)
-        substitutions = []
+        # Type check
+        substitutions = self.type_checker.check(ast)
 
         # Generate code (disabled for now)
         if target == 'vm':

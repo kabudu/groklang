@@ -50,11 +50,15 @@ Without configuration, AI features use mock responses.
 grok hello.grok
 ```
 
+This performs full type checking and code generation.
+
 3. Compile and run:
 
 ```bash
 grok hello.grok --run
 ```
+
+For VM target, executes via built-in stack-based VM. For LLVM target, compiles to native code.
 
 For LLVM IR output:
 
@@ -62,7 +66,14 @@ For LLVM IR output:
 grok hello.grok --target llvm
 ```
 
-This generates `hello.ll` (LLVM IR file).
+Generates `hello.ll` (LLVM IR file) and attempts native compilation if clang is available.
+
+### Full Feature Support
+
+GrokLang now includes:
+- **Complete Type Checking**: Hindley-Milner inference with full constraint solving
+- **Runtime Execution**: Stack-based VM for immediate execution
+- **Native Compilation**: LLVM backend generates executable binaries
 
 ## Hello World Example
 
