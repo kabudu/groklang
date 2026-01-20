@@ -233,6 +233,74 @@ match result {
 }
 ```
 
+### 7. **Macros and Metaprogramming**
+
+Compile-time code generation:
+
+```grok
+macro_rules! vec {
+    ($($x:expr),*) => {
+        {
+            let mut v = Vec::new();
+            $(v.push($x);)*
+            v
+        }
+    };
+}
+
+let v = vec![1, 2, 3];
+```
+
+### 8. **Advanced Concurrency**
+
+Supervision trees and deadlock detection:
+
+```grok
+actor Supervisor {
+    fn supervise(child: ActorRef) {
+        // Monitor and restart on failure
+    }
+}
+
+// AI-powered deadlock analysis
+#[ai_analyze]
+fn complex_concurrent_logic() {
+    // Code with potential deadlocks
+}
+```
+
+### 9. **Performance Optimizations**
+
+JIT compilation, advanced GC, zero-cost abstractions:
+
+```grok
+#[optimize(jit)]
+fn hot_function() {
+    // Gets JIT compiled at runtime
+}
+
+trait Iterator<T> {
+    fn next(&mut self) -> Option<T>;
+    // Zero-cost abstraction - monomorphized at compile time
+}
+```
+
+### 10. **Security Features**
+
+Sandboxing and formal verification:
+
+```grok
+#[sandbox]
+fn untrusted_code() {
+    // Runs in restricted environment
+}
+
+#[verify]
+fn critical_function() {
+    // Formally verified for correctness
+}
+```
+
 ---
 
 ## 🏗️ Architecture Overview

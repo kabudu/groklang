@@ -7,20 +7,34 @@ class MacroExpander:
         self.macros[name] = rules
 
     def expand_macro(self, name: str, args):
-        """Expand macro call"""
+        """Expand macro call with pattern matching"""
         if name not in self.macros:
             raise ValueError(f"Macro {name} not defined")
 
         rules = self.macros[name]
-        # Simple expansion: return first rule's template with args substituted
-        for rule in rules:
-            pattern, template = rule[1], rule[2]
-            # Basic substitution (placeholder)
-            if isinstance(template, tuple) and len(template) > 2:
-                return (template[0], template[1], args)
-            return template
+        for pattern, template in rules:
+            if self._matches_pattern(pattern, args):
+                return self._substitute_template(template, pattern, args)
 
-        raise ValueError(f"No matching rule for macro {name}")
+        raise ValueError(f"No matching rule for macro {name} with args {args}")
+
+    def _matches_pattern(self, pattern, args):
+        """Check if args match the pattern"""
+        # Simple: check length and types
+        if isinstance(pattern, list) and len(pattern) == len(args):
+            return True
+        return len(pattern) == len(args) if hasattr(pattern, '__len__') else True
+
+    def _substitute_template(self, template, pattern, args):
+        """Substitute pattern variables in template"""
+        # Basic substitution: replace $0, $1, etc. with args
+        if isinstance(template, str):
+            for i, arg in enumerate(args):
+                template = template.replace(f'${i}', str(arg))
+            return template
+        elif isinstance(template, tuple):
+            return tuple(self._substitute_template(t, pattern, args) for t in template)
+        return template
 
     def expand_ast(self, ast):
         """Expand macros in AST"""

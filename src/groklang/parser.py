@@ -475,14 +475,18 @@ class Parser:
 
     def p_field_inits(self, p):
         """field_inits : field_init
-                        | field_inits COMMA field_init
-                        | empty"""
+                         | field_inits COMMA field_init
+                         | empty"""
         if p[1] is None:
             p[0] = {}
         elif len(p) == 2:
             p[0] = {p[1][0]: p[1][1]}
         else:
             p[1][p[3][0]] = p[3][1]
+
+    def p_field_init(self, p):
+        """field_init : ID COLON expression"""
+        p[0] = (p[1], p[3])
             p[0] = p[1]
 
 

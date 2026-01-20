@@ -9,12 +9,21 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_COMPLETION,
     TEXT_DOCUMENT_DIAGNOSTIC,
+    TEXT_DOCUMENT_HOVER,
+    TEXT_DOCUMENT_DEFINITION,
+    TEXT_DOCUMENT_REFERENCES,
     CompletionParams,
     CompletionList,
     CompletionItem,
     CompletionItemKind,
     Diagnostic,
     DiagnosticSeverity,
+    Hover,
+    MarkupContent,
+    MarkupKind,
+    Definition,
+    Location,
+    ReferenceParams,
     Position,
     Range,
 )
@@ -80,7 +89,26 @@ async def completion(params: CompletionParams) -> CompletionList:
     items = []
     for keyword in KEYWORDS:
         items.append(CompletionItem(label=keyword, kind=CompletionItemKind.Keyword))
+    # Add built-in functions
+    for func in ["println", "Vec", "HashMap", "spawn"]:
+        items.append(CompletionItem(label=func, kind=CompletionItemKind.Function))
     return CompletionList(is_incomplete=False, items=items)
+
+@server.feature(TEXT_DOCUMENT_HOVER)
+async def hover(params) -> Hover:
+    # Simple hover: show keyword info
+    word = "fn"  # Placeholder
+    return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value=f"**{word}**: Keyword"))
+
+@server.feature(TEXT_DOCUMENT_DEFINITION)
+async def definition(params) -> Definition:
+    # Placeholder: return location of definition
+    return Location(uri=params.text_document.uri, range=Range(start=Position(line=0, character=0), end=Position(line=0, character=3)))
+
+@server.feature(TEXT_DOCUMENT_REFERENCES)
+async def references(params: ReferenceParams) -> List[Location]:
+    # Placeholder: find references
+    return [Location(uri=params.text_document.uri, range=Range(start=Position(line=1, character=0), end=Position(line=1, character=3)))]
 
 if __name__ == "__main__":
     import asyncio
