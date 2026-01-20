@@ -60,7 +60,7 @@ def main():
     elif args.target == "llvm" and args.run:
         from groklang.llvm_codegen import LLVMGenerator
         gen = LLVMGenerator()
-        result = gen.save_and_compile(args.file)
+        result = gen.compile_to_executable(args.file)
         print(result)
     elif args.target == "vm" and args.run:
         print("Program compiled successfully")

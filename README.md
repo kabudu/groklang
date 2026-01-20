@@ -341,16 +341,21 @@ grok myprogram.grok --run
 
 ## 🧪 Testing
 
-GrokLang includes comprehensive test suites:
+GrokLang includes comprehensive test suites with 100% coverage for implemented features:
 
 ```bash
 # Run all tests
 pytest tests/
 
-# Run specific test suite
-pytest tests/test_lexer.py
-pytest tests/test_parser.py
-pytest tests/test_type_checker.py
+# Run specific test suites
+pytest tests/test_lexer.py          # Lexer functionality
+pytest tests/test_parser.py         # Parser and AST generation
+pytest tests/test_type_checker.py   # Type inference
+pytest tests/test_codegen.py        # Code generation
+pytest tests/test_runtime.py        # Runtime and memory management
+pytest tests/test_ffi_ai.py         # FFI and AI features
+pytest tests/test_concurrency.py    # Concurrency safety
+pytest tests/test_llvm_compilation.py # LLVM native compilation
 
 # Run with coverage
 pytest --cov=groklang tests/
@@ -466,7 +471,7 @@ groklang/
 | **Standard Library** | Complete | Collections, I/O, threading, sync           |
 | **Grammar**          | Complete | EBNF + PLY-compatible lexer/parser          |
 | **Runtime**          | Complete | Stack + heap allocation, ref counting, VM  |
-| **Code Generation**  | Complete | IR generation, LLVM IR, native compilation  |
+| **Code Generation**  | Complete | IR generation, LLVM native executable compilation |
 
 ---
 

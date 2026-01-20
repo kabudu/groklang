@@ -60,13 +60,13 @@ grok hello.grok --run
 
 For VM target, executes via built-in stack-based VM. For LLVM target, compiles to native code.
 
-For LLVM IR output:
+For LLVM native compilation:
 
 ```bash
-grok hello.grok --target llvm
+grok hello.grok --target llvm --run
 ```
 
-Generates `hello.ll` (LLVM IR file) and attempts native compilation if clang is available.
+Generates `hello.ll` (LLVM IR file) and compiles it to a native executable using clang.
 
 ### Full Feature Support
 

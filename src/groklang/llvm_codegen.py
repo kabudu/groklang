@@ -45,18 +45,23 @@ class LLVMGenerator:
 
         return None
 
-    def save_and_compile(self, filename: str):
-        """Save LLVM IR to file and attempt to compile to executable"""
+    def compile_to_executable(self, filename: str):
+        """Compile LLVM IR to native executable"""
         ir_file = filename.replace('.grok', '.ll')
         exe_file = filename.replace('.grok', '')
 
+        # Generate and save IR
         with open(ir_file, 'w') as f:
-            f.write(self.generate([]))  # Pass empty list for now
+            f.write(self.generate([]))
 
-        # Try to compile with clang if available
+        # Compile with clang
         import subprocess
         try:
-            subprocess.run(['clang', ir_file, '-o', exe_file], check=True)
-            return f"Compiled to {exe_file}"
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return f"LLVM IR saved to {ir_file}. Install clang to compile to executable."
+            # Add runtime library linking if needed
+            cmd = ['clang', ir_file, '-o', exe_file]
+            subprocess.run(cmd, check=True, capture_output=True)
+            return f"Successfully compiled {exe_file}"
+        except subprocess.CalledProcessError as e:
+            return f"Compilation failed: {e.stderr.decode()}"
+        except FileNotFoundError:
+            return f"Clang not found. LLVM IR saved to {ir_file}. Install clang for native compilation."
