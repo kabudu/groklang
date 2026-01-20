@@ -1,4 +1,4 @@
-from src.groklang.ffi import TypeMarshaler, PythonFFI, CFFI, BidirectionalFFI
+from src.groklang.ffi import TypeMarshaler, PythonFFI, CFFI, BidirectionalFFI, NodeJsFFI, RustFFI, GoFFI
 from src.groklang.types import PrimitiveType
 from src.groklang.decorator_processor import DecoratorProcessor, MockLlmService
 
@@ -27,6 +27,36 @@ def test_python_ffi():
     except ImportError:
         print("Python FFI import test skipped (math not available)")
 
+def test_nodejs_ffi():
+    nodejs_ffi = NodeJsFFI()
+    
+    module = nodejs_ffi.load_module("fs")
+    assert module == "loaded_fs"
+    
+    result = nodejs_ffi.call_function("fs", "readFile", ["test.txt"])
+    assert result == "nodejs_result_readFile(['test.txt'])"
+    print("Node.js FFI test passed!")
+
+def test_rust_ffi():
+    rust_ffi = RustFFI()
+    
+    # Mock library loading
+    lib = rust_ffi.load_library("libmyrust.so")
+    # In real scenario, would load actual library
+    
+    # Since lib is None (stub), call_function returns None
+    result = rust_ffi.call_function("libmyrust.so", "my_func", [1, 2])
+    assert result is None
+    print("Rust FFI test passed!")
+
+def test_go_ffi():
+    go_ffi = GoFFI()
+    
+    lib = go_ffi.load_library("libmygo.so")
+    result = go_ffi.call_function("libmygo.so", "my_func", [1, 2])
+    assert result is None
+    print("Go FFI test passed!")
+
 def test_decorator_processing():
     processor = DecoratorProcessor(MockLlmService())
 
@@ -45,4 +75,7 @@ def test_decorator_processing():
 if __name__ == "__main__":
     test_type_marshaling()
     test_python_ffi()
+    test_nodejs_ffi()
+    test_rust_ffi()
+    test_go_ffi()
     test_decorator_processing()

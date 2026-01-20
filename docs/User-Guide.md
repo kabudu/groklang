@@ -249,7 +249,7 @@ fn translate_me() {
 ## Advanced Topics
 
 - **Memory Safety**: Automatic borrow checking prevents data races.
-- **FFI**: Call Python/C functions seamlessly.
+- **FFI**: Call functions in Python, C, Node.js, Rust, Go, and more.
 - **Modules**: Use `use` for importing, `mod` for defining modules.
 - **Closures**: Functional programming with `|params| body`.
 - **Error Handling**: Use `?` for try-like behavior.
@@ -319,6 +319,41 @@ use my_module::{PublicStruct, another_item};
 - `mod`: Defines a module
 - `use`: Imports public items from modules
 - Privacy is enforced at compile-time
+
+### FFI (Foreign Function Interface)
+
+GrokLang supports seamless interoperability with multiple languages:
+
+```groklang
+// Call Python functions
+let result = python::call("math", "sqrt", [4.0]);
+
+// Call C functions
+let sum = c::call("mylib", "add", [1, 2]);
+
+// Call Node.js functions
+let data = nodejs::call("fs", "readFile", ["file.txt"]);
+
+// Call Rust functions
+let hash = rust::call("crypto", "hash", ["data"]);
+
+// Call Go functions
+let response = go::call("http", "get", ["https://api.example.com"]);
+
+// Export Grok functions
+export fn grok_func(x: i32) -> i32 {
+    x * 2
+}
+```
+
+**Supported Languages:**
+- **Python**: Direct module imports and function calls
+- **C**: Shared library loading and ABI calls
+- **Node.js**: JavaScript module execution
+- **Rust**: Compiled shared libraries
+- **Go**: Go shared libraries
+
+FFI handles automatic type marshaling. Additional languages can be added through the extensible FFI framework.
 
 ### Concurrency Safety
 

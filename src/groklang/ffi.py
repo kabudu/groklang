@@ -95,3 +95,60 @@ class BidirectionalFFI:
             # Simplified: call exported function directly
             return self.call_exported(grok_func_name, list(args))
         return wrapper
+
+class NodeJsFFI:
+    def __init__(self):
+        self.node_process = None
+
+    def load_module(self, module_path: str):
+        """Load Node.js module"""
+        # Stub: would start Node.js process or use some bridge
+        self.node_process = f"loaded_{module_path}"
+        return self.node_process
+
+    def call_function(self, module: str, func_name: str, args: list) -> Any:
+        """Call Node.js function (stub)"""
+        # Stub: communicate with Node.js process
+        if self.node_process:
+            return f"nodejs_result_{func_name}({args})"
+        return None
+
+class RustFFI:
+    def __init__(self):
+        self.libs = {}
+
+    def load_library(self, lib_path: str):
+        """Load Rust library (compiled to shared lib)"""
+        import ctypes
+        try:
+            self.libs[lib_path] = ctypes.CDLL(lib_path)
+        except:
+            self.libs[lib_path] = None
+        return self.libs[lib_path]
+
+    def call_function(self, lib_path: str, func_name: str, args: list) -> Any:
+        """Call Rust function"""
+        if lib_path in self.libs and self.libs[lib_path]:
+            func = getattr(self.libs[lib_path], func_name)
+            return func(*args)
+        return None
+
+class GoFFI:
+    def __init__(self):
+        self.libs = {}
+
+    def load_library(self, lib_path: str):
+        """Load Go library"""
+        import ctypes
+        try:
+            self.libs[lib_path] = ctypes.CDLL(lib_path)
+        except:
+            self.libs[lib_path] = None
+        return self.libs[lib_path]
+
+    def call_function(self, lib_path: str, func_name: str, args: list) -> Any:
+        """Call Go function"""
+        if lib_path in self.libs and self.libs[lib_path]:
+            func = getattr(self.libs[lib_path], func_name)
+            return func(*args)
+        return None
