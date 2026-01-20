@@ -1,11 +1,25 @@
 from typing import List, Dict, Any
 from .ir import IRFunction, IRInstruction
 
+class RuntimeProfiler:
+    def __init__(self):
+        self.execution_counts = {}
+        self.hotspots = set()
+
+    def record_execution(self, func_name: str):
+        self.execution_counts[func_name] = self.execution_counts.get(func_name, 0) + 1
+        if self.execution_counts[func_name] > 100:  # Threshold
+            self.hotspots.add(func_name)
+
+    def get_hotspots(self):
+        return list(self.hotspots)
+
 class BytecodeVM:
     def __init__(self):
         self.stack = []
         self.variables: Dict[str, Any] = {}
         self.functions: Dict[str, IRFunction] = {}
+        self.profiler = RuntimeProfiler()
 
     def load_program(self, functions: List[IRFunction]):
         for func in functions:
@@ -93,6 +107,7 @@ class BytecodeVM:
             for _ in range(num_args):
                 call_args.append(self.stack.pop())
             call_args.reverse()
+            self.profiler.record_execution(func_name)
             result = self.call_function(func_name, call_args)
             if result is not None:
                 self.stack.append(result)

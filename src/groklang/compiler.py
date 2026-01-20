@@ -5,6 +5,7 @@ from .codegen import CodeGenerator
 from .vm import BytecodeVM
 from .llvm_codegen import LLVMGenerator
 from .config import config
+from .runtime_ai import RuntimeAIOptimizer
 from .deadlock_detector import DeadlockDetector
 
 class Compiler:
@@ -13,6 +14,7 @@ class Compiler:
         self.llm_service = self.create_llm_service()
         self.decorator_processor = DecoratorProcessor(self.llm_service)
         self.deadlock_detector = DeadlockDetector(self.llm_service) if config.deadlock_detection else None
+        self.runtime_ai = RuntimeAIOptimizer(self.llm_service, BytecodeVM().profiler)
         self.codegen = CodeGenerator()
         self.vm = BytecodeVM()
         self.llvm_gen = LLVMGenerator()
@@ -68,9 +70,7 @@ class Compiler:
                 'llvm': llvm_code,
                 'errors': []
             }
-        else:
-            return {
-                'ast': ast,
-                'substitutions': substitutions,
-                'errors': []
-            }
+
+    def runtime_optimize(self, code: str) -> str:
+        """Apply runtime AI optimizations"""
+        return self.runtime_ai.optimize_hotspots(code)

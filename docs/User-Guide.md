@@ -305,6 +305,22 @@ deadlock_detection = true
 
 The compiler validates AI-generated code for correctness before applying changes.
 
+### Runtime AI Features
+
+GrokLang supports dynamic runtime optimization:
+
+- **Profiling**: Automatic execution tracking to identify performance hotspots.
+- **Adaptive Optimization**: AI-driven recompilation of hot functions at runtime.
+- **Configuration**: Enable in `grok.toml`:
+
+```toml
+[runtime]
+ai_optimization = true
+profiling_threshold = 100
+```
+
+Runtime AI analyzes execution patterns and applies optimizations like loop unrolling, inlining, or algorithm improvements based on actual usage.
+
 For more details, see:
 - [Language Specification](docs/Specifications/03-Syntax-Grammar.md)
 - [Implementation Roadmap](docs/Implementation-Roadmap.md)

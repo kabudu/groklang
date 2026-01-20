@@ -38,10 +38,10 @@ Create a **production-ready programming language** that:
 - Optional AI-managed garbage collection for complex cases
 
 ✅ **AI Integration**
-
 - Built-in `@ai_optimize` decorator for automatic code optimization
 - `@ai_test` for intelligent test generation
 - `@ai_translate` for FFI code generation
+- Runtime AI profiling and adaptive recompilation
 - AI is optional—graceful fallback when unavailable
 
 ✅ **Modern Concurrency**
@@ -466,7 +466,7 @@ groklang/
 | **Type System**      | Complete | Full ML-style Hindley-Milner inference      |
 | **Memory Safety**    | Complete | Borrow checker + optional AI-GC             |
 | **Concurrency**      | Complete | Threads + actors + AI deadlock detection + supervision |
-| **AI Integration**   | Complete | Decorators + LLM service abstraction        |
+| **AI Integration**   | Complete | Decorators + runtime profiling + adaptive compilation |
 | **FFI**              | Complete | Python + C with type marshaling             |
 | **Standard Library** | Complete | Collections, I/O, threading, sync           |
 | **Grammar**          | Complete | EBNF + PLY-compatible lexer/parser          |
