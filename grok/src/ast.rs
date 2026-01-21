@@ -28,7 +28,7 @@ pub struct Param {
     pub ty: Option<Type>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int32,
     Float64,

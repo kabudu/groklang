@@ -95,7 +95,7 @@ pub enum Token {
     Char,
     #[regex(r"[0-9]+")]
     Int,
-    #[regex(r"[0-9]+\\.[0-9]+")]
+    #[regex(r"[0-9]+\.[0-9]+", priority = 2)]
     Float,
     // RawString, ByteString - TODO
     // #[regex(r"r\"([^\"])*\"")]

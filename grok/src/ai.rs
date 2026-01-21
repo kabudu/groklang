@@ -60,7 +60,7 @@ impl AiService {
         }
     }
 
-    fn is_safe(&self, output: &str) -> bool {
+    pub fn is_safe(&self, output: &str) -> bool {
         // Basic checks
         !output.contains("eval(") && !output.contains("exec(")
     }
