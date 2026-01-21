@@ -24,22 +24,22 @@
     - [x] Hindley-Milner inference.
     - [x] Type unification.
     - [x] Borrow checker port (Exclusivity & Scoping).
-- [x] **2.2 IR & LLVM Integration**
-    - [x] Block-based IR generation.
-    - [x] Support for function calls, macros, and structs.
-    - [ ] Inkwell (LLVM) JIT integration.
+- [x] **2.2 Native Code Generation (Cranelift)**
+    - [x] Integrate `cranelift` crates for JIT and native compilation.
+    - [x] Implement JIT for arithmetic, recursion, and control flow.
+    - [x] Optimized for Apple Silicon (aarch64) and x86_64.
 - [/] **2.3 VM Expansion**
     - [x] Stack frames and Call Stack for recursion.
     - [x] Full arithmetic and comparison opcodes.
-    - [ ] Object model and Garbage Collection (Heap-based).
+    - [x] Object model and Garbage Collection (Heap-based).
 
 ## Phase 3: Advanced Features (AI, Concurrency, FFI)
 - [ ] **3.1 Concurrency**
     - [ ] Actor supervision trees.
     - [ ] Deadlock detection.
-- [ ] **3.2 AI Integration**
-    - [ ] Real LLM integration (reqwest).
-    - [ ] AI security sandboxing and post-analysis.
+- [x] **3.2 AI Integration**
+    - [x] Real LLM integration (reqwest + OpenAI compatible).
+    - [x] AI security sandboxing and post-analysis.
 - [ ] **3.3 FFI**
     - [ ] PyO3 and bindgen integration.
 

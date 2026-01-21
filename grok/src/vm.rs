@@ -3,14 +3,95 @@
 use crate::ir::{IRFunction, Opcode};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Int(i64),
     Float(f64),
-    Str(String),
     Bool(bool),
-    Struct(String, Box<HashMap<String, Value>>),
+    Object(usize), // Index into the heap
     Unit,
+}
+
+#[derive(Debug, Clone)]
+pub enum HeapObject {
+    Str(String),
+    Struct(String, HashMap<String, Value>),
+}
+
+pub struct Heap {
+    objects: Vec<Option<HeapObject>>,
+    marked: Vec<bool>,
+    free_list: Vec<usize>,
+}
+
+impl Heap {
+    pub fn new() -> Self {
+        Self {
+            objects: Vec::new(),
+            marked: Vec::new(),
+            free_list: Vec::new(),
+        }
+    }
+
+    pub fn alloc(&mut self, obj: HeapObject) -> usize {
+        if let Some(idx) = self.free_list.pop() {
+            self.objects[idx] = Some(obj);
+            self.marked[idx] = false;
+            idx
+        } else {
+            let idx = self.objects.len();
+            self.objects.push(Some(obj));
+            self.marked.push(false);
+            idx
+        }
+    }
+
+    pub fn get(&self, idx: usize) -> Option<&HeapObject> {
+        self.objects.get(idx).and_then(|o| o.as_ref())
+    }
+
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut HeapObject> {
+        self.objects.get_mut(idx).and_then(|o| o.as_mut())
+    }
+
+    pub fn gc(&mut self, roots: &[Value], frames: &[Frame], globals: &HashMap<String, Value>) {
+        // 1. Mark
+        self.marked.fill(false);
+        for root in roots {
+            self.mark_value(root);
+        }
+        for frame in frames {
+            for val in frame.locals.values() {
+                self.mark_value(val);
+            }
+        }
+        for val in globals.values() {
+            self.mark_value(val);
+        }
+
+        // 2. Sweep
+        for i in 0..self.objects.len() {
+            if self.objects[i].is_some() && !self.marked[i] {
+                self.objects[i] = None;
+                self.free_list.push(i);
+            }
+        }
+    }
+
+    fn mark_value(&mut self, val: &Value) {
+        if let Value::Object(idx) = val {
+            if !self.marked[*idx] {
+                self.marked[*idx] = true;
+                // Recursively mark fields of structs
+                if let Some(Some(HeapObject::Struct(_, fields))) = self.objects.get(*idx) {
+                    let fields = fields.clone(); // Avoid borrow issues while recursing
+                    for f_val in fields.values() {
+                        self.mark_value(f_val);
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Value {
@@ -31,6 +112,7 @@ pub struct VM {
     call_stack: Vec<Frame>,
     functions: HashMap<String, IRFunction>,
     globals: HashMap<String, Value>,
+    pub heap: Heap,
 }
 
 impl VM {
@@ -40,6 +122,7 @@ impl VM {
             call_stack: Vec::new(),
             functions: HashMap::new(),
             globals: HashMap::new(),
+            heap: Heap::new(),
         }
     }
 
@@ -50,8 +133,6 @@ impl VM {
     }
 
     pub fn execute(&mut self, func_name: &str) -> Result<Value, String> {
-        let func = self.functions.get(func_name).ok_or("Function not found")?;
-        
         self.call_stack.push(Frame {
             func_name: func_name.to_string(),
             current_block_idx: 0,
@@ -59,13 +140,21 @@ impl VM {
             locals: HashMap::new(),
         });
 
+        // Simple GC counter
+        let mut gc_timer = 0;
+
         while !self.call_stack.is_empty() {
+            gc_timer += 1;
+            if gc_timer > 1000 {
+                self.heap.gc(&self.stack, &self.call_stack, &self.globals);
+                gc_timer = 0;
+            }
+
             let (instr, func) = {
                 let frame = self.call_stack.last().unwrap();
                 let func = self.functions.get(&frame.func_name).unwrap();
                 let block = &func.blocks[frame.current_block_idx];
                 if frame.current_instr_idx >= block.instructions.len() {
-                    // Block end
                     if frame.current_block_idx + 1 < func.blocks.len() {
                         let frame = self.call_stack.last_mut().unwrap();
                         frame.current_block_idx += 1;
@@ -133,26 +222,61 @@ impl VM {
                     self.stack.push(Value::Bool(match (a, b) {
                         (Some(Value::Int(va)), Some(Value::Int(vb))) => va == vb,
                         (Some(Value::Bool(va)), Some(Value::Bool(vb))) => va == vb,
+                        (Some(Value::Object(oa)), Some(Value::Object(ob))) => oa == ob,
+                        (Some(Value::Unit), Some(Value::Unit)) => true,
                         _ => false,
                     }));
                 }
+                Opcode::Ne => {
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
+                    self.stack.push(Value::Bool(match (a, b) {
+                        (Some(Value::Int(va)), Some(Value::Int(vb))) => va != vb,
+                        (Some(Value::Bool(va)), Some(Value::Bool(vb))) => va != vb,
+                        (Some(Value::Object(oa)), Some(Value::Object(ob))) => oa != ob,
+                        (Some(Value::Unit), Some(Value::Unit)) => false,
+                        _ => true,
+                    }));
+                }
+                Opcode::Lt => {
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
+                    if let (Some(Value::Int(va)), Some(Value::Int(vb))) = (a, b) {
+                        self.stack.push(Value::Bool(va < vb));
+                    } else { return Err("Invalid types for Lt".to_string()); }
+                }
+                Opcode::Gt => {
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
+                    if let (Some(Value::Int(va)), Some(Value::Int(vb))) = (a, b) {
+                        self.stack.push(Value::Bool(va > vb));
+                    } else { return Err("Invalid types for Gt".to_string()); }
+                }
                 Opcode::PushFloat(v) => self.stack.push(Value::Float(*v)),
-                Opcode::PushStr(v) => self.stack.push(Value::Str(v.clone())),
+                Opcode::PushStr(v) => {
+                    let idx = self.heap.alloc(HeapObject::Str(v.clone()));
+                    self.stack.push(Value::Object(idx));
+                }
                 Opcode::PushStruct(name, fields) => {
                     let mut field_vals = HashMap::new();
                     for field_name in fields.iter().rev() {
                         let val = self.stack.pop().ok_or("Stack underflow in PushStruct")?;
                         field_vals.insert(field_name.clone(), val);
                     }
-                    self.stack.push(Value::Struct(name.clone(), Box::new(field_vals)));
+                    let idx = self.heap.alloc(HeapObject::Struct(name.clone(), field_vals));
+                    self.stack.push(Value::Object(idx));
                 }
                 Opcode::LoadField(name) => {
                     let val = self.stack.pop().ok_or("Stack underflow in LoadField")?;
-                    if let Value::Struct(_, fields) = val {
-                        let f_val = fields.get(name).ok_or_else(|| format!("Field {} not found", name))?;
-                        self.stack.push(f_val.clone());
+                    if let Value::Object(idx) = val {
+                        if let Some(HeapObject::Struct(_, fields)) = self.heap.get(idx) {
+                            let f_val = fields.get(name).ok_or_else(|| format!("Field {} not found", name))?;
+                            self.stack.push(f_val.clone());
+                        } else {
+                            return Err(format!("Cannot load field {} from non-struct object", name));
+                        }
                     } else {
-                        return Err(format!("Cannot load field {} from non-struct value {:?}", name, val));
+                        return Err(format!("Cannot load field {} from non-object value {:?}", name, val));
                     }
                 }
                 Opcode::Jmp(label) => {

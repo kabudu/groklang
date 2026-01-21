@@ -13,4 +13,5 @@ pub mod concurrency;
 pub mod ffi;
 pub mod package_manager;
 pub mod macro_expander;
+pub mod compiler;
 pub mod borrow_checker;
