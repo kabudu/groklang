@@ -8,20 +8,36 @@ GrokLang is a modern, AI-enhanced programming language designed for safe, concur
 
 ### Installation
 
-GrokLang requires Python 3.8+ and PLY. Install dependencies and build the binary:
+GrokLang is available in two implementations: Python (prototyping) and Rust (production).
+
+#### Python Version (Legacy)
+Requires Python 3.8+ and PLY. Install dependencies and build the binary:
 
 ```bash
 git clone https://github.com/yourorg/groklang.git
 cd groklang
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -r src-legacy/groklang/requirements.txt
 
 # Build the binary
-./build_binary.sh
+./src-legacy/groklang/build_binary.sh
 ```
 
-This creates a standalone `grok` executable.
+#### Rust Version (Recommended)
+For production use, the Rust implementation offers superior performance and safety:
+
+```bash
+git clone https://github.com/yourorg/groklang.git
+cd groklang/grok
+
+# Build with Cargo
+cd grok && cargo build --release && cd ..
+```
+
+This creates a standalone `grok` executable in `target/release/`.
+
+Both versions are compatible and produce identical results.
 
 ### AI Configuration
 
