@@ -85,6 +85,18 @@ pub enum Token {
     Move,
     #[token("in")]
     In,
+    #[token("return")]
+    Return,
+    #[token("break")]
+    Break,
+    #[token("continue")]
+    Continue,
+    #[token("loop")]
+    Loop,
+    #[token("for")]
+    For,
+    #[token("while")]
+    While,
     #[token("_", priority = 2)]
     Underscore,
 
@@ -93,15 +105,12 @@ pub enum Token {
     String,
     #[regex(r#"'([^'\\]|\\.)'"#)]
     Char,
+    #[regex(r#"b"([^"\\]|\\.)*""#)]
+    ByteString,
     #[regex(r"[0-9]+")]
     Int,
     #[regex(r"[0-9]+\.[0-9]+", priority = 2)]
     Float,
-    // RawString, ByteString - TODO
-    // #[regex(r"r\"([^\"])*\"")]
-    // RawString,
-    // #[regex(r"b\"([^\"\\\\]|\\\\.)*\"")]
-    // ByteString,
 
     // Operators
     #[token("+")]
@@ -192,22 +201,59 @@ pub enum Token {
     Identifier,
 }
 
+pub struct TokenData {
+    pub token: Token,
+    pub slice: String,
+    pub line: usize,
+    pub col: usize,
+}
+
 pub struct Lexer<'source> {
     inner: logos::Lexer<'source, Token>,
+    line: usize,
+    last_newline: usize,
 }
 
 impl<'source> Lexer<'source> {
     pub fn new(source: &'source str) -> Self {
         Self {
             inner: Token::lexer(source),
+            line: 1,
+            last_newline: 0,
         }
     }
 }
 
 impl<'source> Iterator for Lexer<'source> {
-    type Item = Result<Token, ()>;
+    type Item = Result<TokenData, ()>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
+        match self.inner.next() {
+            Some(Ok(token)) => {
+                let slice = self.inner.slice();
+                let span = self.inner.span();
+                
+                // Update line and column
+                let start = span.start;
+                let col = start - self.last_newline + 1;
+                
+                // If the slice contains newlines, update our tracking for the NEXT token
+                for (i, c) in slice.char_indices() {
+                    if c == '\n' {
+                        self.line += 1;
+                        self.last_newline = start + i + 1;
+                    }
+                }
+
+                Some(Ok(TokenData {
+                    token,
+                    slice: slice.to_string(),
+                    line: self.line,
+                    col,
+                }))
+            }
+            Some(Err(_)) => Some(Err(())),
+            None => None,
+        }
     }
 }

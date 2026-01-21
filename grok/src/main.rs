@@ -9,10 +9,11 @@ mod ir;
 mod vm;
 mod ai;
 mod lsp;
+mod macro_expander;
 
-use lexer::Lexer;
 use parser::Parser as GrokParser;
 use type_checker::TypeChecker;
+use macro_expander::MacroExpander;
 use ir::IRGenerator;
 use vm::VM;
 
@@ -44,20 +45,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let source = fs::read_to_string(&file)?;
             let parser = GrokParser::new();
             let ast = parser.parse(&source)?;
-            println!("Parsed AST: {:?}", ast);
+            
+            let mut expander = MacroExpander::new();
+            let ast = expander.expand(ast);
+            
+            println!("Expanded AST: {:?}", ast);
 
             let mut type_checker = TypeChecker::new();
-            type_checker.check(&ast)?;
-            println!("Type check passed");
+            match type_checker.check(&ast) {
+                Ok(substitutions) => {
+                    println!("Type check passed. Inferred types:");
+                    for (var, ty) in substitutions {
+                        println!("  {}: {:?}", var, ty);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Type error: {}", e);
+                    std::process::exit(1);
+                }
+            }
 
-            let ir_gen = IRGenerator::new();
+            let mut ir_gen = IRGenerator::new();
             let ir_functions = ir_gen.generate(&ast);
             println!("Generated IR: {:?}", ir_functions);
 
             let mut vm = VM::new();
             vm.load_program(&ir_functions);
             if !ir_functions.is_empty() {
-                vm.execute(&ir_functions[0].name)?;
+                let result = vm.execute(&ir_functions[0].name)?;
+                println!("Execution result: {:?}", result);
             }
             println!("Execution completed");
             Ok(())

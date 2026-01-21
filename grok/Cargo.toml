@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 logos = "0.14"
 nom = "7.1"
+nom_locate = "4.0"
 typed-arena = "2.0"
 # inkwell = { version = "0.5", features = ["llvm16-0"] }  # Requires LLVM installed
 tokio = { version = "1.0", features = ["full"] }
@@ -17,3 +18,7 @@ tracing = "0.1"
 anyhow = "1.0"
 thiserror = "1.0"
 tower-lsp = "0.20"
+cranelift = "0.68"
+cranelift-module = "0.68"
+cranelift-simplejit = "0.68"
+# pyo3 = "0.21"  # Requires Python dev headers

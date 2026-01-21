@@ -37,7 +37,7 @@ cd grok && cargo build --release && cd ..
 
 This creates a standalone `grok` executable in `target/release/`.
 
-Both versions are compatible and produce identical results.
+Both versions are compatible and produce identical results. The Rust version is recommended for production use due to superior performance and safety.
 
 ### AI Configuration
 
