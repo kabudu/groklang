@@ -15,3 +15,4 @@ pub mod package_manager;
 pub mod macro_expander;
 pub mod compiler;
 pub mod borrow_checker;
+pub mod python_ffi;

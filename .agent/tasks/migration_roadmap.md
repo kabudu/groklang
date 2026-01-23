@@ -43,8 +43,8 @@
 - [x] **3.2 AI Integration**
     - [x] Real LLM integration (reqwest + OpenAI compatible).
     - [x] AI security sandboxing and post-analysis.
-- [ ] **3.3 FFI**
-    - [ ] PyO3 and bindgen integration.
+- [x] **3.3 FFI**
+    - [x] PyO3 and bindgen integration.
 
 ## Phase 4: Ecosystem (CLI, LSP, Package Manager)
 - [ ] **4.1 Tooling**

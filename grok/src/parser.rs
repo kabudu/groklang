@@ -538,6 +538,7 @@ fn param(input: Input) -> IResult<Input, Param> {
 fn type_annotation(input: Input) -> IResult<Input, Type> {
     alt((
         map(tag("i32"), |_| Type::Primitive("i32".to_string())),
+        map(tag("i64"), |_| Type::Primitive("i64".to_string())),
         map(tag("f64"), |_| Type::Primitive("f64".to_string())),
         map(tag("bool"), |_| Type::Primitive("bool".to_string())),
         map(tag("String"), |_| Type::Primitive("String".to_string())),
