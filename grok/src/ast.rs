@@ -40,6 +40,20 @@ pub enum AstNode {
         body: Box<AstNode>, // Block
         span: Span,
     },
+    Spawn {
+        actor: String,
+        args: Vec<(String, AstNode)>,
+        span: Span,
+    },
+    Send {
+        target: Box<AstNode>,
+        message: Box<AstNode>,
+        span: Span,
+    },
+    Receive {
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
 
     // Statements
     LetStmt {
@@ -168,5 +182,36 @@ pub enum Type {
     Struct(String, Vec<(String, Type)>),
     Trait(String),
     Reference(Box<Type>, bool),
+    Actor(String),
     Unit,
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Primitive(s) => write!(f, "{}", s),
+            Type::Variable(s) => write!(f, "{}", s),
+            Type::Generic(n, args) => {
+                write!(f, "{}<", n)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", arg)?;
+                }
+                write!(f, ">")
+            }
+            Type::Function(params, ret) => {
+                write!(f, "fn(")?;
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", p)?;
+                }
+                write!(f, ") -> {}", ret)
+            }
+            Type::Struct(n, _) => write!(f, "struct {}", n),
+            Type::Trait(n) => write!(f, "trait {}", n),
+            Type::Reference(t, mutable) => write!(f, "&{}{}", if *mutable { "mut " } else { "" }, t),
+            Type::Actor(n) => write!(f, "actor {}", n),
+            Type::Unit => write!(f, "()"),
+        }
+    }
 }

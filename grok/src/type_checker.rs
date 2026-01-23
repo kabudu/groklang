@@ -96,6 +96,15 @@ impl TypeChecker {
                 let ty = Type::Primitive(name.clone());
                 self.global_types.insert(name.clone(), ty);
             }
+            AstNode::ActorDef { name, .. } => {
+                let ty = Type::Actor(name.clone());
+                self.global_types.insert(name.clone(), ty);
+            }
+            AstNode::FunctionDef { name, params, return_type, .. } => {
+                let p_tys = params.iter().map(|p| p.ty.clone().unwrap_or_else(|| Type::Variable(format!("{}_p", name)))).collect();
+                let r_ty = return_type.clone().unwrap_or(Type::Unit);
+                self.global_types.insert(name.clone(), Type::Function(p_tys, Box::new(r_ty)));
+            }
             _ => {}
         }
         Ok(())
@@ -163,7 +172,22 @@ impl TypeChecker {
             AstNode::StringLiteral(_, _) => Ok(Type::Primitive("str".to_string())),
             AstNode::BoolLiteral(_, _) => Ok(Type::Primitive("bool".to_string())),
             AstNode::Identifier(name, _) => {
-                env.lookup(name).ok_or_else(|| format!("Undefined variable: {}", name))
+                env.lookup(name)
+                    .or_else(|| self.global_types.get(name).cloned())
+                    .ok_or_else(|| format!("Undefined variable: {}", name))
+            }
+            AstNode::FunctionCall { func, args, .. } => {
+                let f_ty = self.collect(func, env)?;
+                let res_ty = self.fresh_type_var();
+                let mut arg_types = Vec::new();
+                for arg in args {
+                    arg_types.push(self.collect(arg, env)?);
+                }
+                self.constraints.push(Constraint {
+                    left: f_ty,
+                    right: Type::Function(arg_types, Box::new(res_ty.clone())),
+                });
+                Ok(res_ty)
             }
             AstNode::BinaryOp { left, op, right, .. } => {
                 let l_ty = self.collect(left, env)?;
@@ -204,6 +228,15 @@ impl TypeChecker {
                     Ok(Type::Unit)
                 }
             }
+            AstNode::Return { value, .. } => {
+                let ty = if let Some(v) = value {
+                    self.collect(v, env)?
+                } else {
+                    Type::Unit
+                };
+                Ok(ty)
+            }
+            AstNode::Break { .. } | AstNode::Continue { .. } => Ok(Type::Unit),
             AstNode::MatchExpr { scrutinee, arms, .. } => {
                 let s_ty = self.collect(scrutinee, env)?;
                 let res_ty = self.fresh_type_var();
@@ -261,6 +294,51 @@ impl TypeChecker {
                     _ => Err(format!("Cannot access member {} on non-struct type {:?}", member, obj_ty)),
                 }
             }
+            AstNode::ActorDef { name, .. } => {
+                let ty = Type::Actor(name.clone());
+                self.global_types.insert(name.clone(), ty.clone());
+                Ok(ty)
+            }
+            AstNode::Spawn { actor, args, .. } => {
+                if !self.global_types.contains_key(actor) {
+                    return Err(format!("Undefined actor: {}", actor));
+                }
+                for (_, expr) in args {
+                    self.collect(expr, env)?;
+                }
+                Ok(Type::Actor(actor.clone()))
+            }
+            AstNode::Send { target, message, .. } => {
+                let t_ty = self.collect(target, env)?;
+                let _m_ty = self.collect(message, env)?;
+                
+                let fresh = self.fresh_type_var().to_string();
+                self.constraints.push(Constraint {
+                    left: t_ty,
+                    right: Type::Actor(fresh),
+                });
+
+                Ok(Type::Unit)
+            }
+            AstNode::Receive { arms, .. } => {
+                let res_ty = self.fresh_type_var();
+                for arm in arms {
+                    let _p_ty = self.collect_pattern(&arm.pattern, env)?;
+                    if let Some(guard) = &arm.guard {
+                        let g_ty = self.collect(guard, env)?;
+                        self.constraints.push(Constraint {
+                            left: g_ty,
+                            right: Type::Primitive("bool".to_string()),
+                        });
+                    }
+                    let b_ty = self.collect(&arm.body, env)?;
+                    self.constraints.push(Constraint {
+                        left: res_ty.clone(),
+                        right: b_ty,
+                    });
+                }
+                Ok(res_ty)
+            }
             _ => Ok(Type::Unit),
         }
     }
@@ -304,6 +382,8 @@ impl TypeChecker {
                     }
                     constraints.push(Constraint { left: *r1, right: *r2 });
                 }
+                (Type::Struct(n1, _), Type::Struct(n2, _)) if n1 == n2 => {}
+                (Type::Actor(a1), Type::Actor(a2)) if a1 == a2 => {}
                 (l, r) => return Err(format!("Type mismatch: {:?} vs {:?}", l, r)),
             }
         }

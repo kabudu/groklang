@@ -8,7 +8,8 @@ mod tests {
         let mut jit = JITCompiler::new();
         let func = IRFunction {
             name: "test".to_string(),
-            instructions: vec![],
+            params: vec![],
+            blocks: vec![],
         };
         // Note: Cranelift may not work without full setup, placeholder
         // assert!(jit.compile(&func).is_ok());

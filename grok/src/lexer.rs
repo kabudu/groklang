@@ -201,11 +201,18 @@ pub enum Token {
     Identifier,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct TokenData {
     pub token: Token,
     pub slice: String,
     pub line: usize,
     pub col: usize,
+}
+
+impl TokenData {
+     pub fn is(&self, token: Token) -> bool {
+        self.token == token
+    }
 }
 
 pub struct Lexer<'source> {

@@ -12,8 +12,8 @@ mod tests {
         assert_eq!(ir.len(), 0); // Empty program
     }
 
-    #[test]
-    fn test_vm_execution() {
+    #[tokio::test]
+    async fn test_vm_execution() {
         let mut vm = VM::new();
         let mut gen = IRGenerator::new();
         let span = Span { line: 1, col: 1 };
@@ -27,14 +27,15 @@ mod tests {
         };
         let ir = gen.generate(&ast);
         vm.load_program(&ir);
-        let result = vm.execute("test").unwrap();
+        let result = vm.execute("test".to_string(), None).await.unwrap();
         match result {
             Value::Int(v) => assert_eq!(v, 42),
             _ => panic!("Expected int 42"),
         }
     }
-    #[test]
-    fn test_vm_struct() {
+    
+    #[tokio::test]
+    async fn test_vm_struct() {
         let span = Span { line: 1, col: 1 };
         let ast = AstNode::Program(vec![
             AstNode::FunctionDef {
@@ -59,14 +60,14 @@ mod tests {
         let ir = ir_gen.generate(&ast);
         let mut vm = VM::new();
         vm.load_program(&ir);
-        let result = vm.execute("main");
+        let result = vm.execute("main".to_string(), None).await;
 
         assert!(result.is_ok(), "VM execution failed: {:?}", result.err());
         assert_eq!(result.unwrap().into_int().unwrap(), 42);
     }
 
-    #[test]
-    fn test_vm_recursion() {
+    #[tokio::test]
+    async fn test_vm_recursion() {
         let span = Span { line: 0, col: 0 };
         // fn fact(n) { if n == 1 { 1 } else { n * fact(n - 1) } }
         let ast = AstNode::Program(vec![
@@ -120,7 +121,7 @@ mod tests {
         let ir = ir_gen.generate(&ast);
         let mut vm = VM::new();
         vm.load_program(&ir);
-        let result = vm.execute("main");
+        let result = vm.execute("main".to_string(), None).await;
 
         assert!(result.is_ok(), "VM execution failed: {:?}", result.err());
         assert_eq!(result.unwrap().into_int().unwrap(), 120);

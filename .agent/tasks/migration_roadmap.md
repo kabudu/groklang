@@ -14,13 +14,14 @@
     - [x] Implement Match expressions and Patterns.
     - [x] Implement Loops (for, while) and Flow Control.
     - [x] Implement Macro definitions and expansion.
+    - [x] Support for single-line comments (//).
 - [x] **1.4 Validation & Testing**
     - [x] Unit tests for all grammar rules.
     - [x] Macro expansion tests.
-    - [ ] Parser error recovery tests.
+    - [x] Parser error recovery tests (all_consuming validation).
 
 ## Phase 2: Core Pipeline (Type Checker, IR, VM/LLVM)
-- [/] **2.1 Type Checker**
+- [x] **2.1 Type Checker**
     - [x] Hindley-Milner inference.
     - [x] Type unification.
     - [x] Borrow checker port (Exclusivity & Scoping).
@@ -32,11 +33,13 @@
     - [x] Stack frames and Call Stack for recursion.
     - [x] Full arithmetic and comparison opcodes.
     - [x] Object model and Garbage Collection (Heap-based).
+    - [x] Thread-safe asynchronous execution (Send + 'static).
 
 ## Phase 3: Advanced Features (AI, Concurrency, FFI)
-- [ ] **3.1 Concurrency**
-    - [ ] Actor supervision trees.
-    - [ ] Deadlock detection.
+- [x] **3.1 Concurrency**
+    - [x] Core Actor primitives (Spawn, Send, Receive).
+    - [x] Actor supervision trees (Foundational meta-data & status).
+    - [x] Deadlock detection (Global stall detection).
 - [x] **3.2 AI Integration**
     - [x] Real LLM integration (reqwest + OpenAI compatible).
     - [x] AI security sandboxing and post-analysis.

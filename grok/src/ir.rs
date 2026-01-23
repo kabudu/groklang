@@ -17,6 +17,9 @@ pub enum Opcode {
     PushStruct(String, Vec<String>),
     Call(String, usize),
     Ret,
+    Spawn(String, usize),
+    Send,
+    Receive,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +74,26 @@ impl IRGenerator {
                 functions.push(IRFunction {
                     name: name.clone(),
                     params: params.iter().map(|p| p.name.clone()).collect(),
+                    blocks,
+                });
+            }
+            AstNode::ActorDef { name, body, .. } => {
+                let mut blocks = vec![IRBlock {
+                    label: "entry".to_string(),
+                    instructions: Vec::new(),
+                }];
+                self.gen_expr(body, &mut blocks);
+                
+                // Ensure return
+                if let Some(last_block) = blocks.last_mut() {
+                    if last_block.instructions.is_empty() || !matches!(last_block.instructions.last().unwrap().opcode, Opcode::Ret) {
+                        last_block.instructions.push(IRInstruction { opcode: Opcode::Ret });
+                    }
+                }
+
+                functions.push(IRFunction {
+                    name: name.clone(),
+                    params: vec![],
                     blocks,
                 });
             }
@@ -183,10 +206,27 @@ impl IRGenerator {
                     current_block.instructions.push(IRInstruction { opcode: Opcode::Call(name.clone(), args.len()) });
                 }
             }
-            AstNode::MemberAccess { object, member, .. } => {
-                self.gen_expr(object, blocks);
+            AstNode::Spawn { actor, args, .. } => {
+                for (_, arg) in args {
+                    self.gen_expr(arg, blocks);
+                }
                 let current_block = blocks.last_mut().unwrap();
-                current_block.instructions.push(IRInstruction { opcode: Opcode::LoadField(member.clone()) });
+                current_block.instructions.push(IRInstruction { opcode: Opcode::Spawn(actor.clone(), args.len()) });
+            }
+            AstNode::Send { target, message, .. } => {
+                self.gen_expr(target, blocks);
+                self.gen_expr(message, blocks);
+                let current_block = blocks.last_mut().unwrap();
+                current_block.instructions.push(IRInstruction { opcode: Opcode::Send });
+            }
+            AstNode::Receive { arms, .. } => {
+                // Simplified receive: just wait for any message
+                // This will push the message to the stack
+                let current_block = blocks.last_mut().unwrap();
+                current_block.instructions.push(IRInstruction { opcode: Opcode::Receive });
+                for arm in arms {
+                    self.gen_arm(arm, blocks);
+                }
             }
             _ => {}
         }

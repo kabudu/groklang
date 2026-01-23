@@ -59,4 +59,11 @@ mod tests {
         let result = parser.parse("fn main() { my_macro!(10); }");
         assert!(result.is_ok(), "Failed to parse macro call: {:?}", result.err());
     }
+
+    #[test]
+    fn test_parse_invalid_syntax() {
+        let parser = Parser::new();
+        let result = parser.parse("fn (a: i32) {}"); // Missing name
+        assert!(result.is_err());
+    }
 }

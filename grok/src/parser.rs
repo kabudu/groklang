@@ -1,8 +1,8 @@
 use crate::ast::{AstNode, Param, Type, Span, MatchArm, Pattern};
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_while1},
-    character::complete::{char, digit1, multispace0},
+    bytes::complete::{tag, take_while, take_while1},
+    character::complete::{char, digit1, multispace0, multispace1},
     combinator::{map, opt, value},
     multi::{many0, separated_list0},
     sequence::{delimited, pair, preceded, terminated, tuple},
@@ -28,7 +28,7 @@ impl Parser {
 
     pub fn parse(&self, input: &str) -> Result<AstNode, String> {
         let input = LocatedSpan::new(input);
-        match program(input) {
+        match nom::combinator::all_consuming(program)(input) {
             Ok((_, ast)) => Ok(ast),
             Err(e) => Err(format!("Parse error: {:?}", e)),
         }
@@ -39,7 +39,26 @@ fn ws<'a, F, O>(inner: F) -> impl FnMut(Input<'a>) -> IResult<Input<'a>, O, nom:
 where
     F: FnMut(Input<'a>) -> IResult<Input<'a>, O, nom::error::Error<Input<'a>>>,
 {
-    delimited(multispace0, inner, multispace0)
+    delimited(
+        skip_ws_and_comments,
+        inner,
+        skip_ws_and_comments,
+    )
+}
+
+fn skip_ws_and_comments(input: Input) -> IResult<Input, ()> {
+    let (input, _) = nom::character::complete::multispace0(input)?;
+    let mut input = input;
+    loop {
+        if let Ok((i, _)) = tag::<_, _, nom::error::Error<Input>>("//")(input) {
+            let (i, _) = take_while(|c: char| c != '\n')(i)?;
+            let (i, _) = nom::character::complete::multispace0(i)?;
+            input = i;
+        } else {
+            break;
+        }
+    }
+    Ok((input, ()))
 }
 
 fn identifier(input: Input) -> IResult<Input, String> {
@@ -99,7 +118,7 @@ fn function_def(input: Input) -> IResult<Input, AstNode> {
             tag("fn"),
             ws(identifier),
             delimited(char('('), separated_list0(char(','), ws(param)), char(')')),
-            opt(ws(type_annotation)),
+            opt(preceded(ws(tag("->")), ws(type_annotation))),
             ws(block),
         )),
         move |(_, name, params, ret_type, body)| AstNode::FunctionDef {
@@ -272,7 +291,7 @@ fn for_loop(input: Input) -> IResult<Input, AstNode> {
 }
 
 fn expression(input: Input) -> IResult<Input, AstNode> {
-    alt((if_expr, match_expr, binary_expr, unary_expr, postfix_expr))(input)
+    alt((if_expr, match_expr, receive_expr, spawn_expr, binary_expr, unary_expr, postfix_expr))(input)
 }
 
 fn unary_expr(input: Input) -> IResult<Input, AstNode> {
@@ -331,6 +350,44 @@ fn match_expr(input: Input) -> IResult<Input, AstNode> {
     )(input)
 }
 
+fn receive_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    map(
+        tuple((
+            tag("receive"),
+            delimited(
+                ws(char('{')),
+                many0(ws(match_arm)),
+                ws(char('}')),
+            ),
+        )),
+        move |(_, arms)| AstNode::Receive {
+            arms,
+            span: start_span.clone(),
+        },
+    )(input)
+}
+
+fn spawn_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    map(
+        tuple((
+            tag("spawn"),
+            ws(identifier),
+            delimited(
+                ws(char('{')),
+                separated_list0(ws(char(',')), pair(identifier, preceded(ws(char(':')), expression))),
+                ws(char('}')),
+            ),
+        )),
+        move |(_, actor, args)| AstNode::Spawn {
+            actor,
+            args,
+            span: start_span.clone(),
+        },
+    )(input)
+}
+
 fn match_arm(input: Input) -> IResult<Input, MatchArm> {
     map(
         tuple((
@@ -363,14 +420,25 @@ fn binary_expr(input: Input) -> IResult<Input, AstNode> {
     map(
         tuple((
             postfix_expr,
-            ws(alt((tag("+"), tag("-"), tag("*"), tag("/"), tag("=="), tag("!=")))),
+            ws(alt((tag("+"), tag("-"), tag("*"), tag("/"), tag("=="), tag("!="), tag("!")))),
             expression,
         )),
-        move |(left, op, right)| AstNode::BinaryOp {
-            left: Box::new(left),
-            op: op.to_string(),
-            right: Box::new(right),
-            span: start_span.clone(),
+        move |(left, op_span, right)| {
+            let op = op_span.to_string();
+            if op == "!" {
+                AstNode::Send {
+                    target: Box::new(left),
+                    message: Box::new(right),
+                    span: start_span.clone(),
+                }
+            } else {
+                AstNode::BinaryOp {
+                    left: Box::new(left),
+                    op: op.to_string(),
+                    right: Box::new(right),
+                    span: start_span.clone(),
+                }
+            }
         },
     )(input)
 }

@@ -1,0 +1,24 @@
+#[cfg(test)]
+mod tests {
+    use grok::parser::Parser;
+    use grok::ast::AstNode;
+
+    #[test]
+    fn test_actor_parsing() {
+        let parser = Parser::new();
+        let input = "
+            actor MyActor {
+                receive {
+                    msg => println!(msg)
+                }
+            }
+
+            fn main() {
+                let a = spawn MyActor {};
+                a ! 42;
+            }
+        ";
+        let result = parser.parse(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+    }
+}

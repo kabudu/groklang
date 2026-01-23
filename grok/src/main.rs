@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let mut vm = VM::new();
             vm.load_program(&ir_functions);
             if !ir_functions.is_empty() {
-                let result = vm.execute(&ir_functions[0].name)?;
+                let result = vm.execute(ir_functions[0].name.clone(), None).await?;
                 println!("Execution result: {:?}", result);
             }
             println!("Execution completed");
