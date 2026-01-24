@@ -10,8 +10,16 @@ pub enum Opcode {
     LoadVar(String),
     StoreVar(String),
     LoadField(String),
-    Add, Sub, Mul, Div,
-    Eq, Ne, Lt, Gt, Le, Ge,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
     Jmp(String),
     JmpIfFalse(String),
     PushStruct(String, Vec<String>),
@@ -57,17 +65,23 @@ impl IRGenerator {
                     functions.extend(self.generate(node));
                 }
             }
-            AstNode::FunctionDef { name, params, body, .. } => {
+            AstNode::FunctionDef {
+                name, params, body, ..
+            } => {
                 let mut blocks = vec![IRBlock {
                     label: "entry".to_string(),
                     instructions: Vec::new(),
                 }];
                 self.gen_expr(body, &mut blocks);
-                
+
                 // Ensure return
                 if let Some(last_block) = blocks.last_mut() {
-                    if last_block.instructions.is_empty() || !matches!(last_block.instructions.last().unwrap().opcode, Opcode::Ret) {
-                        last_block.instructions.push(IRInstruction { opcode: Opcode::Ret });
+                    if last_block.instructions.is_empty()
+                        || !matches!(last_block.instructions.last().unwrap().opcode, Opcode::Ret)
+                    {
+                        last_block.instructions.push(IRInstruction {
+                            opcode: Opcode::Ret,
+                        });
                     }
                 }
 
@@ -83,11 +97,15 @@ impl IRGenerator {
                     instructions: Vec::new(),
                 }];
                 self.gen_expr(body, &mut blocks);
-                
+
                 // Ensure return
                 if let Some(last_block) = blocks.last_mut() {
-                    if last_block.instructions.is_empty() || !matches!(last_block.instructions.last().unwrap().opcode, Opcode::Ret) {
-                        last_block.instructions.push(IRInstruction { opcode: Opcode::Ret });
+                    if last_block.instructions.is_empty()
+                        || !matches!(last_block.instructions.last().unwrap().opcode, Opcode::Ret)
+                    {
+                        last_block.instructions.push(IRInstruction {
+                            opcode: Opcode::Ret,
+                        });
                     }
                 }
 
@@ -106,26 +124,40 @@ impl IRGenerator {
         let current_block = blocks.last_mut().expect("No blocks in IR generation");
         match expr {
             AstNode::IntLiteral(val, _) => {
-                current_block.instructions.push(IRInstruction { opcode: Opcode::PushInt(*val) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::PushInt(*val),
+                });
             }
             AstNode::FloatLiteral(val, _) => {
-                current_block.instructions.push(IRInstruction { opcode: Opcode::PushFloat(*val) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::PushFloat(*val),
+                });
             }
             AstNode::StringLiteral(val, _) => {
-                current_block.instructions.push(IRInstruction { opcode: Opcode::PushStr(val.clone()) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::PushStr(val.clone()),
+                });
             }
             AstNode::BoolLiteral(val, _) => {
-                current_block.instructions.push(IRInstruction { opcode: Opcode::PushBool(*val) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::PushBool(*val),
+                });
             }
             AstNode::Identifier(name, _) => {
-                current_block.instructions.push(IRInstruction { opcode: Opcode::LoadVar(name.clone()) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::LoadVar(name.clone()),
+                });
             }
             AstNode::LetStmt { name, expr, .. } => {
                 self.gen_expr(expr, blocks);
                 let current_block = blocks.last_mut().unwrap();
-                current_block.instructions.push(IRInstruction { opcode: Opcode::StoreVar(name.clone()) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::StoreVar(name.clone()),
+                });
             }
-            AstNode::BinaryOp { left, op, right, .. } => {
+            AstNode::BinaryOp {
+                left, op, right, ..
+            } => {
                 self.gen_expr(left, blocks);
                 self.gen_expr(right, blocks);
                 let current_block = blocks.last_mut().unwrap();
@@ -149,14 +181,21 @@ impl IRGenerator {
                     self.gen_expr(v, blocks);
                 }
                 let current_block = blocks.last_mut().unwrap();
-                current_block.instructions.push(IRInstruction { opcode: Opcode::Ret });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::Ret,
+                });
             }
             AstNode::Block(stmts) => {
                 for stmt in stmts {
                     self.gen_expr(stmt, blocks);
                 }
             }
-            AstNode::IfExpr { condition, then_body, else_body, .. } => {
+            AstNode::IfExpr {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
                 let id = self.temp_counter;
                 self.temp_counter += 1;
                 let then_label = format!("then_{}", id);
@@ -165,24 +204,41 @@ impl IRGenerator {
 
                 self.gen_expr(condition, blocks);
                 let current_block = blocks.last_mut().unwrap();
-                current_block.instructions.push(IRInstruction { opcode: Opcode::JmpIfFalse(else_label.clone()) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::JmpIfFalse(else_label.clone()),
+                });
 
                 // Then
-                blocks.push(IRBlock { label: then_label, instructions: Vec::new() });
+                blocks.push(IRBlock {
+                    label: then_label,
+                    instructions: Vec::new(),
+                });
                 self.gen_expr(then_body, blocks);
-                blocks.last_mut().unwrap().instructions.push(IRInstruction { opcode: Opcode::Jmp(end_label.clone()) });
+                blocks.last_mut().unwrap().instructions.push(IRInstruction {
+                    opcode: Opcode::Jmp(end_label.clone()),
+                });
 
                 // Else
-                blocks.push(IRBlock { label: else_label, instructions: Vec::new() });
+                blocks.push(IRBlock {
+                    label: else_label,
+                    instructions: Vec::new(),
+                });
                 if let Some(e) = else_body {
                     self.gen_expr(e, blocks);
                 }
-                blocks.last_mut().unwrap().instructions.push(IRInstruction { opcode: Opcode::Jmp(end_label.clone()) });
+                blocks.last_mut().unwrap().instructions.push(IRInstruction {
+                    opcode: Opcode::Jmp(end_label.clone()),
+                });
 
                 // End
-                blocks.push(IRBlock { label: end_label, instructions: Vec::new() });
+                blocks.push(IRBlock {
+                    label: end_label,
+                    instructions: Vec::new(),
+                });
             }
-            AstNode::MatchExpr { scrutinee, arms, .. } => {
+            AstNode::MatchExpr {
+                scrutinee, arms, ..
+            } => {
                 self.gen_expr(scrutinee, blocks);
                 for arm in arms {
                     self.gen_arm(arm, blocks);
@@ -195,7 +251,9 @@ impl IRGenerator {
                     f_names.push(f_name.clone());
                 }
                 let current_block = blocks.last_mut().unwrap();
-                current_block.instructions.push(IRInstruction { opcode: Opcode::PushStruct(name.clone(), f_names) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::PushStruct(name.clone(), f_names),
+                });
             }
             AstNode::FunctionCall { func, args, .. } => {
                 if let AstNode::Identifier(name, _) = &**func {
@@ -203,7 +261,9 @@ impl IRGenerator {
                         self.gen_expr(arg, blocks);
                     }
                     let current_block = blocks.last_mut().unwrap();
-                    current_block.instructions.push(IRInstruction { opcode: Opcode::Call(name.clone(), args.len()) });
+                    current_block.instructions.push(IRInstruction {
+                        opcode: Opcode::Call(name.clone(), args.len()),
+                    });
                 }
             }
             AstNode::Spawn { actor, args, .. } => {
@@ -211,22 +271,37 @@ impl IRGenerator {
                     self.gen_expr(arg, blocks);
                 }
                 let current_block = blocks.last_mut().unwrap();
-                current_block.instructions.push(IRInstruction { opcode: Opcode::Spawn(actor.clone(), args.len()) });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::Spawn(actor.clone(), args.len()),
+                });
             }
-            AstNode::Send { target, message, .. } => {
+            AstNode::Send {
+                target, message, ..
+            } => {
                 self.gen_expr(target, blocks);
                 self.gen_expr(message, blocks);
                 let current_block = blocks.last_mut().unwrap();
-                current_block.instructions.push(IRInstruction { opcode: Opcode::Send });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::Send,
+                });
             }
             AstNode::Receive { arms, .. } => {
                 // Simplified receive: just wait for any message
                 // This will push the message to the stack
                 let current_block = blocks.last_mut().unwrap();
-                current_block.instructions.push(IRInstruction { opcode: Opcode::Receive });
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::Receive,
+                });
                 for arm in arms {
                     self.gen_arm(arm, blocks);
                 }
+            }
+            AstNode::MemberAccess { object, member, .. } => {
+                self.gen_expr(object, blocks);
+                let current_block = blocks.last_mut().unwrap();
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::LoadField(member.clone()),
+                });
             }
             _ => {}
         }

@@ -1,5 +1,5 @@
 // grok/src/type_checker.rs
-use crate::ast::{AstNode, Type, MatchArm};
+use crate::ast::{AstNode, MatchArm, Type};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,10 +68,10 @@ impl TypeChecker {
         self.constraints.clear();
         self.global_types.clear();
         let mut env = TypeEnv::new();
-        
+
         // Pass 1: Collect definitions
         self.collect_definitions(ast)?;
-        
+
         // Pass 2: Collect constraints
         self.collect(ast, &mut env)?;
 
@@ -100,10 +100,22 @@ impl TypeChecker {
                 let ty = Type::Actor(name.clone());
                 self.global_types.insert(name.clone(), ty);
             }
-            AstNode::FunctionDef { name, params, return_type, .. } => {
-                let p_tys = params.iter().map(|p| p.ty.clone().unwrap_or_else(|| Type::Variable(format!("{}_p", name)))).collect();
+            AstNode::FunctionDef {
+                name,
+                params,
+                return_type,
+                ..
+            } => {
+                let p_tys = params
+                    .iter()
+                    .map(|p| {
+                        p.ty.clone()
+                            .unwrap_or_else(|| Type::Variable(format!("{}_p", name)))
+                    })
+                    .collect();
                 let r_ty = return_type.clone().unwrap_or(Type::Unit);
-                self.global_types.insert(name.clone(), Type::Function(p_tys, Box::new(r_ty)));
+                self.global_types
+                    .insert(name.clone(), Type::Function(p_tys, Box::new(r_ty)));
             }
             _ => {}
         }
@@ -118,14 +130,20 @@ impl TypeChecker {
                 }
                 Ok(Type::Unit)
             }
-            AstNode::FunctionDef { name, params, body, return_type, .. } => {
+            AstNode::FunctionDef {
+                name,
+                params,
+                body,
+                return_type,
+                ..
+            } => {
                 let mut param_types = Vec::new();
                 for param in params {
                     let ty = param.ty.clone().unwrap_or_else(|| self.fresh_type_var());
                     param_types.push(ty.clone());
                     env.bind(param.name.clone(), ty);
                 }
-                
+
                 let body_type = self.collect(body, env)?;
                 if let Some(ret_ty) = return_type {
                     self.constraints.push(Constraint {
@@ -133,7 +151,7 @@ impl TypeChecker {
                         right: ret_ty.clone(),
                     });
                 }
-                
+
                 let func_type = Type::Function(param_types, Box::new(body_type));
                 env.bind(name.clone(), func_type.clone());
                 Ok(func_type)
@@ -145,11 +163,17 @@ impl TypeChecker {
             }
             AstNode::EnumDef { name, .. } => {
                 // Simplified enum handling
-                let ty = Type::Primitive(name.clone()); 
+                let ty = Type::Primitive(name.clone());
                 self.global_types.insert(name.clone(), ty);
                 Ok(Type::Unit)
             }
-            AstNode::LetStmt { name, mutable: _, ty, expr, .. } => {
+            AstNode::LetStmt {
+                name,
+                mutable: _,
+                ty,
+                expr,
+                ..
+            } => {
                 let expr_type = self.collect(expr, env)?;
                 if let Some(declared_ty) = ty {
                     self.constraints.push(Constraint {
@@ -171,11 +195,10 @@ impl TypeChecker {
             AstNode::FloatLiteral(_, _) => Ok(Type::Primitive("f64".to_string())),
             AstNode::StringLiteral(_, _) => Ok(Type::Primitive("str".to_string())),
             AstNode::BoolLiteral(_, _) => Ok(Type::Primitive("bool".to_string())),
-            AstNode::Identifier(name, _) => {
-                env.lookup(name)
-                    .or_else(|| self.global_types.get(name).cloned())
-                    .ok_or_else(|| format!("Undefined variable: {}", name))
-            }
+            AstNode::Identifier(name, _) => env
+                .lookup(name)
+                .or_else(|| self.global_types.get(name).cloned())
+                .ok_or_else(|| format!("Undefined variable: {}", name)),
             AstNode::FunctionCall { func, args, .. } => {
                 let f_ty = self.collect(func, env)?;
                 let res_ty = self.fresh_type_var();
@@ -189,10 +212,12 @@ impl TypeChecker {
                 });
                 Ok(res_ty)
             }
-            AstNode::BinaryOp { left, op, right, .. } => {
+            AstNode::BinaryOp {
+                left, op, right, ..
+            } => {
                 let l_ty = self.collect(left, env)?;
                 let r_ty = self.collect(right, env)?;
-                
+
                 if ["+", "-", "*", "/"].contains(&op.as_str()) {
                     self.constraints.push(Constraint {
                         left: l_ty.clone(),
@@ -209,13 +234,18 @@ impl TypeChecker {
                     Ok(Type::Unit)
                 }
             }
-            AstNode::IfExpr { condition, then_body, else_body, .. } => {
+            AstNode::IfExpr {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
                 let cond_ty = self.collect(condition, env)?;
                 self.constraints.push(Constraint {
                     left: cond_ty,
                     right: Type::Primitive("bool".to_string()),
                 });
-                
+
                 let then_ty = self.collect(then_body, env)?;
                 if let Some(else_b) = else_body {
                     let else_ty = self.collect(else_b, env)?;
@@ -237,7 +267,9 @@ impl TypeChecker {
                 Ok(ty)
             }
             AstNode::Break { .. } | AstNode::Continue { .. } => Ok(Type::Unit),
-            AstNode::MatchExpr { scrutinee, arms, .. } => {
+            AstNode::MatchExpr {
+                scrutinee, arms, ..
+            } => {
                 let s_ty = self.collect(scrutinee, env)?;
                 let res_ty = self.fresh_type_var();
                 for arm in arms {
@@ -262,16 +294,23 @@ impl TypeChecker {
                 Ok(res_ty)
             }
             AstNode::StructLiteral { name, fields, .. } => {
-                let struct_def_ty = self.global_types.get(name)
-                    .ok_or_else(|| format!("Undefined struct: {}", name))?.clone();
-                
+                let struct_def_ty = self
+                    .global_types
+                    .get(name)
+                    .ok_or_else(|| format!("Undefined struct: {}", name))?
+                    .clone();
+
                 if let Type::Struct(_, def_fields) = struct_def_ty {
                     for (f_name, f_expr) in fields {
                         let f_expr_ty = self.collect(f_expr, env)?;
-                        let def_f_ty = def_fields.iter().find(|(n, _)| n == f_name)
+                        let def_f_ty = def_fields
+                            .iter()
+                            .find(|(n, _)| n == f_name)
                             .map(|(_, t)| t)
-                            .ok_or_else(|| format!("Unknown field {} in struct {}", f_name, name))?;
-                        
+                            .ok_or_else(|| {
+                                format!("Unknown field {} in struct {}", f_name, name)
+                            })?;
+
                         self.constraints.push(Constraint {
                             left: f_expr_ty,
                             right: def_f_ty.clone(),
@@ -286,12 +325,17 @@ impl TypeChecker {
                 let obj_ty = self.collect(object, env)?;
                 match obj_ty {
                     Type::Struct(name, fields) => {
-                        let field_ty = fields.iter().find(|(n, _)| n == member)
+                        let field_ty = fields
+                            .iter()
+                            .find(|(n, _)| n == member)
                             .map(|(_, t)| t.clone())
                             .ok_or_else(|| format!("Struct {} has no member {}", name, member))?;
                         Ok(field_ty)
                     }
-                    _ => Err(format!("Cannot access member {} on non-struct type {:?}", member, obj_ty)),
+                    _ => Err(format!(
+                        "Cannot access member {} on non-struct type {:?}",
+                        member, obj_ty
+                    )),
                 }
             }
             AstNode::ActorDef { name, .. } => {
@@ -308,17 +352,17 @@ impl TypeChecker {
                 }
                 Ok(Type::Actor(actor.clone()))
             }
-            AstNode::Send { target, message, .. } => {
+            AstNode::Send {
+                target, message, ..
+            } => {
                 let t_ty = self.collect(target, env)?;
                 let _m_ty = self.collect(message, env)?;
-                
-                let fresh = self.fresh_type_var().to_string();
-                self.constraints.push(Constraint {
-                    left: t_ty,
-                    right: Type::Actor(fresh),
-                });
 
-                Ok(Type::Unit)
+                match t_ty {
+                    Type::Actor(_) => Ok(Type::Unit),
+                    Type::Variable(_) => Ok(Type::Unit), // Optimistic
+                    _ => Err(format!("Send target must be an actor, got {:?}", t_ty)),
+                }
             }
             AstNode::Receive { arms, .. } => {
                 let res_ty = self.fresh_type_var();
@@ -343,7 +387,11 @@ impl TypeChecker {
         }
     }
 
-    fn collect_pattern(&mut self, pattern: &crate::ast::Pattern, env: &mut TypeEnv) -> Result<Type, String> {
+    fn collect_pattern(
+        &mut self,
+        pattern: &crate::ast::Pattern,
+        env: &mut TypeEnv,
+    ) -> Result<Type, String> {
         match pattern {
             crate::ast::Pattern::Identifier(name) => {
                 let ty = self.fresh_type_var();
@@ -363,7 +411,9 @@ impl TypeChecker {
             let left = self.apply_subst(&constraint.left, substitution);
             let right = self.apply_subst(&constraint.right, substitution);
 
-            if left == right { continue; }
+            if left == right {
+                continue;
+            }
 
             match (left, right) {
                 (Type::Variable(name), ty) | (ty, Type::Variable(name)) => {
@@ -380,10 +430,18 @@ impl TypeChecker {
                     for (a, b) in p1.into_iter().zip(p2.into_iter()) {
                         constraints.push(Constraint { left: a, right: b });
                     }
-                    constraints.push(Constraint { left: *r1, right: *r2 });
+                    constraints.push(Constraint {
+                        left: *r1,
+                        right: *r2,
+                    });
                 }
                 (Type::Struct(n1, _), Type::Struct(n2, _)) if n1 == n2 => {}
-                (Type::Actor(a1), Type::Actor(a2)) if a1 == a2 => {}
+                (ty @ Type::Actor(_), Type::Variable(name)) => {
+                    substitution.insert(name, ty);
+                }
+                (Type::Variable(name), ty @ Type::Actor(_)) => {
+                    substitution.insert(name, ty);
+                }
                 (l, r) => return Err(format!("Type mismatch: {:?} vs {:?}", l, r)),
             }
         }
@@ -400,7 +458,10 @@ impl TypeChecker {
                 }
             }
             Type::Function(params, ret) => {
-                let params = params.iter().map(|p| self.apply_subst(p, substitution)).collect();
+                let params = params
+                    .iter()
+                    .map(|p| self.apply_subst(p, substitution))
+                    .collect();
                 let ret = Box::new(self.apply_subst(ret, substitution));
                 Type::Function(params, ret)
             }

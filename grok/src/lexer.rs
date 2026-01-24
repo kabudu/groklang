@@ -210,7 +210,7 @@ pub struct TokenData {
 }
 
 impl TokenData {
-     pub fn is(&self, token: Token) -> bool {
+    pub fn is(&self, token: Token) -> bool {
         self.token == token
     }
 }
@@ -239,11 +239,11 @@ impl<'source> Iterator for Lexer<'source> {
             Some(Ok(token)) => {
                 let slice = self.inner.slice();
                 let span = self.inner.span();
-                
+
                 // Update line and column
                 let start = span.start;
                 let col = start - self.last_newline + 1;
-                
+
                 // If the slice contains newlines, update our tracking for the NEXT token
                 for (i, c) in slice.char_indices() {
                     if c == '\n' {

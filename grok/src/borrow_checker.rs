@@ -59,7 +59,11 @@ impl BorrowChecker {
             AstNode::UnaryOp { op, operand, span } => {
                 if op == "&" || op == "&mut" {
                     if let AstNode::Identifier(name, _) = &**operand {
-                        let b_type = if op == "&mut" { BorrowType::Mutable } else { BorrowType::Immutable };
+                        let b_type = if op == "&mut" {
+                            BorrowType::Mutable
+                        } else {
+                            BorrowType::Immutable
+                        };
                         self.add_borrow(name.clone(), b_type, span.clone())?;
                     } else {
                         return Err(format!("Cannot borrow non-identifier at {:?}", span));
@@ -71,7 +75,12 @@ impl BorrowChecker {
                 self.check(left)?;
                 self.check(right)?;
             }
-            AstNode::IfExpr { condition, then_body, else_body, .. } => {
+            AstNode::IfExpr {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
                 self.check(condition)?;
                 self.check(then_body)?;
                 if let Some(e) = else_body {
@@ -84,7 +93,12 @@ impl BorrowChecker {
         Ok(())
     }
 
-    pub fn add_borrow(&mut self, var: String, b_type: BorrowType, span: Span) -> Result<(), String> {
+    pub fn add_borrow(
+        &mut self,
+        var: String,
+        b_type: BorrowType,
+        span: Span,
+    ) -> Result<(), String> {
         // Enforce exclusivity rules across ALL scopes for this variable
         let mut total_borrows = 0;
         let mut has_mutable = false;
@@ -92,7 +106,10 @@ impl BorrowChecker {
         for scope in &self.borrow_stack {
             if let Some(existing) = scope.get(&var) {
                 total_borrows += existing.len();
-                if existing.iter().any(|b| b.borrow_type == BorrowType::Mutable) {
+                if existing
+                    .iter()
+                    .any(|b| b.borrow_type == BorrowType::Mutable)
+                {
                     has_mutable = true;
                 }
             }
@@ -100,17 +117,30 @@ impl BorrowChecker {
 
         if b_type == BorrowType::Mutable {
             if total_borrows > 0 {
-                return Err(format!("Cannot mutably borrow '{}' at {:?} because it is already borrowed", var, span));
+                return Err(format!(
+                    "Cannot mutably borrow '{}' at {:?} because it is already borrowed",
+                    var, span
+                ));
             }
         } else {
             if has_mutable {
-                return Err(format!("Cannot immutably borrow '{}' at {:?} because it is mutably borrowed", var, span));
+                return Err(format!(
+                    "Cannot immutably borrow '{}' at {:?} because it is mutably borrowed",
+                    var, span
+                ));
             }
         }
-        
+
         // Add to current scope
         let current_scope = self.borrow_stack.last_mut().unwrap();
-        current_scope.entry(var.clone()).or_insert(Vec::new()).push(Borrow { var_name: var, borrow_type: b_type, span });
+        current_scope
+            .entry(var.clone())
+            .or_insert(Vec::new())
+            .push(Borrow {
+                var_name: var,
+                borrow_type: b_type,
+                span,
+            });
         Ok(())
     }
 }

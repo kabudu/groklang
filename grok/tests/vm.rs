@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use grok::ast::{AstNode, Span, Param};
+    use grok::ast::{AstNode, Param, Span};
     use grok::ir::IRGenerator;
-    use grok::vm::{VM, Value};
+    use grok::vm::{Value, VM};
 
     #[test]
     fn test_ir_generation() {
@@ -33,28 +33,26 @@ mod tests {
             _ => panic!("Expected int 42"),
         }
     }
-    
+
     #[tokio::test]
     async fn test_vm_struct() {
         let span = Span { line: 1, col: 1 };
-        let ast = AstNode::Program(vec![
-            AstNode::FunctionDef {
-                name: "main".to_string(),
-                params: vec![],
-                return_type: None,
-                body: Box::new(AstNode::MemberAccess {
-                    object: Box::new(AstNode::StructLiteral {
-                        name: "Point".to_string(),
-                        fields: vec![("x".to_string(), AstNode::IntLiteral(42, span.clone()))],
-                        span: span.clone(),
-                    }),
-                    member: "x".to_string(),
+        let ast = AstNode::Program(vec![AstNode::FunctionDef {
+            name: "main".to_string(),
+            params: vec![],
+            return_type: None,
+            body: Box::new(AstNode::MemberAccess {
+                object: Box::new(AstNode::StructLiteral {
+                    name: "Point".to_string(),
+                    fields: vec![("x".to_string(), AstNode::IntLiteral(42, span.clone()))],
                     span: span.clone(),
                 }),
-                decorators: vec![],
+                member: "x".to_string(),
                 span: span.clone(),
-            }
-        ]);
+            }),
+            decorators: vec![],
+            span: span.clone(),
+        }]);
 
         let mut ir_gen = IRGenerator::new();
         let ir = ir_gen.generate(&ast);
@@ -62,8 +60,12 @@ mod tests {
         vm.load_program(&ir);
         let result = vm.execute("main".to_string(), None).await;
 
-        assert!(result.is_ok(), "VM execution failed: {:?}", result.err());
-        assert_eq!(result.unwrap().into_int().unwrap(), 42);
+        let val = result.expect("VM execution failed");
+        if let Value::Int(v) = val {
+            assert_eq!(v, 42);
+        } else {
+            panic!("Expected Value::Int(42), got {:?}", val);
+        }
     }
 
     #[tokio::test]
@@ -73,7 +75,11 @@ mod tests {
         let ast = AstNode::Program(vec![
             AstNode::FunctionDef {
                 name: "fact".to_string(),
-                params: vec![Param { name: "n".to_string(), ty: None, span: span.clone() }],
+                params: vec![Param {
+                    name: "n".to_string(),
+                    ty: None,
+                    span: span.clone(),
+                }],
                 return_type: None,
                 body: Box::new(AstNode::IfExpr {
                     condition: Box::new(AstNode::BinaryOp {
@@ -114,7 +120,7 @@ mod tests {
                 }),
                 decorators: vec![],
                 span: span.clone(),
-            }
+            },
         ]);
 
         let mut ir_gen = IRGenerator::new();

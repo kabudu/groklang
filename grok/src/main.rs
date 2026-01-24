@@ -1,20 +1,20 @@
 use clap::{Parser as ClapParser, Subcommand};
 use std::fs;
 
-mod lexer;
-mod ast;
-mod parser;
-mod type_checker;
-mod ir;
-mod vm;
 mod ai;
+mod ast;
+mod ir;
+mod lexer;
 mod lsp;
 mod macro_expander;
+mod parser;
+mod type_checker;
+mod vm;
 
+use ir::IRGenerator;
+use macro_expander::MacroExpander;
 use parser::Parser as GrokParser;
 use type_checker::TypeChecker;
-use macro_expander::MacroExpander;
-use ir::IRGenerator;
 use vm::VM;
 
 #[derive(ClapParser)]
@@ -45,10 +45,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let source = fs::read_to_string(&file)?;
             let parser = GrokParser::new();
             let ast = parser.parse(&source)?;
-            
+
             let mut expander = MacroExpander::new();
             let ast = expander.expand(ast);
-            
+
             println!("Expanded AST: {:?}", ast);
 
             let mut type_checker = TypeChecker::new();
@@ -78,8 +78,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             println!("Execution completed");
             Ok(())
         }
-        Commands::Lsp => {
-            lsp::run_lsp().await
-        }
+        Commands::Lsp => lsp::run_lsp().await,
     }
 }

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use grok::parser::Parser;
     use grok::ast::AstNode;
+    use grok::parser::Parser;
 
     #[test]
     fn test_actor_parsing() {

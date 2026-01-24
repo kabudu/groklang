@@ -41,30 +41,39 @@ impl AiService {
                     return Err("AI output failed security check".to_string());
                 }
             } else {
-                return Err(resp.error.as_ref().unwrap_or(&"Unknown error".to_string()).clone());
+                return Err(resp
+                    .error
+                    .as_ref()
+                    .unwrap_or(&"Unknown error".to_string())
+                    .clone());
             }
         }
 
         let api_key = std::env::var("GROK_AI_KEY").ok();
-        
+
         let response = if let Some(key) = api_key {
             // Real OpenAI call
             let mut messages = Vec::new();
             let mut system_msg = HashMap::new();
             system_msg.insert("role", "system");
-            system_msg.insert("content", "You are the GrokLang AI agent. You perform code operations as requested.");
+            system_msg.insert(
+                "content",
+                "You are the GrokLang AI agent. You perform code operations as requested.",
+            );
             messages.push(system_msg);
-            
+
             let mut user_msg = HashMap::new();
             user_msg.insert("role", "user");
             let prompt = format!("Operation: {}\nCode:\n{}", operation, code);
             user_msg.insert("content", &prompt);
             messages.push(user_msg);
-            
+
             // Note: In a real implementation we would use a more robust JSON structure
             // This is a simplified version for demonstration
-            
-            let res = self.client.post("https://api.openai.com/v1/chat/completions")
+
+            let res = self
+                .client
+                .post("https://api.openai.com/v1/chat/completions")
                 .header("Authorization", format!("Bearer {}", key))
                 .json(&serde_json::json!({
                     "model": "gpt-3.5-turbo",
@@ -76,7 +85,8 @@ impl AiService {
 
             if res.status().is_success() {
                 let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
-                let content = json["choices"][0]["message"]["content"].as_str()
+                let content = json["choices"][0]["message"]["content"]
+                    .as_str()
                     .ok_or("Invalid response format")?;
                 AiResponse {
                     success: true,

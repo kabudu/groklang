@@ -47,9 +47,9 @@
     - [x] PyO3 and bindgen integration.
 
 ## Phase 4: Ecosystem (CLI, LSP, Package Manager)
-- [ ] **4.1 Tooling**
-    - [ ] LSP completion, diagnostics, and hover.
-    - [ ] CLI enhancements.
-- [ ] **4.2 Productionization**
-    - [ ] CI/CD pipelines.
+- [x] **4.1 Tooling**
+    - [x] LSP completion, diagnostics, and hover.
+    - [x] CLI enhancements.
+- [/] **4.2 Productionization**
+    - [x] CI/CD pipelines.
     - [ ] Performance benchmarking (comparisons to Python).

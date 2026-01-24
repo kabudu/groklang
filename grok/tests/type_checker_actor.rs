@@ -13,10 +13,9 @@ mod tests {
                 }
             }
 
-            fn main() -> i32 {
+            fn main() {
                 let a = spawn MyActor {};
                 a ! 42;
-                0
             }
         ";
         let ast = parser.parse(input).unwrap();

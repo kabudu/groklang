@@ -7,7 +7,7 @@ pub struct Span {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNode {
     Program(Vec<AstNode>),
-    
+
     // Declarations
     FunctionDef {
         name: String,
@@ -194,7 +194,9 @@ impl std::fmt::Display for Type {
             Type::Generic(n, args) => {
                 write!(f, "{}<", n)?;
                 for (i, arg) in args.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", arg)?;
                 }
                 write!(f, ">")
@@ -202,14 +204,18 @@ impl std::fmt::Display for Type {
             Type::Function(params, ret) => {
                 write!(f, "fn(")?;
                 for (i, p) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", p)?;
                 }
                 write!(f, ") -> {}", ret)
             }
             Type::Struct(n, _) => write!(f, "struct {}", n),
             Type::Trait(n) => write!(f, "trait {}", n),
-            Type::Reference(t, mutable) => write!(f, "&{}{}", if *mutable { "mut " } else { "" }, t),
+            Type::Reference(t, mutable) => {
+                write!(f, "&{}{}", if *mutable { "mut " } else { "" }, t)
+            }
             Type::Actor(n) => write!(f, "actor {}", n),
             Type::Unit => write!(f, "()"),
         }

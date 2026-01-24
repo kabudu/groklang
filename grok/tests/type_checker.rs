@@ -1,13 +1,15 @@
 #[cfg(test)]
 mod tests {
+    use grok::ast::{AstNode, Span, Type};
     use grok::parser::Parser;
     use grok::type_checker::TypeChecker;
-    use grok::ast::{AstNode, Type, Span};
 
     #[test]
     fn test_type_check_inference() {
         let parser = Parser::new();
-        let ast = parser.parse("fn add(a, b) { let x = a + b; return x }").unwrap();
+        let ast = parser
+            .parse("fn add(a, b) { let x = a + b; return x }")
+            .unwrap();
         let mut checker = TypeChecker::new();
         let result = checker.check(&ast);
         assert!(result.is_ok(), "Type check failed: {:?}", result.err());
@@ -22,7 +24,10 @@ mod tests {
         let parser = Parser::new();
         // i32 + bool should fail if we were stricter, but our skeletal binary op currently unifies types.
         // Let's try matching mismatch.
-        let ast = parser.parse("fn err() { let x: i32 = true; }").unwrap();
+        // The parser expects a complete program, so "fn err() { ... }" is correct.
+        let ast = parser
+            .parse("fn err() -> () { let x: i32 = true; return; }")
+            .unwrap();
         let mut checker = TypeChecker::new();
         let result = checker.check(&ast);
         assert!(result.is_err(), "Should have failed type check");
@@ -48,10 +53,14 @@ mod tests {
                     span: span.clone(),
                 }),
                 span: span.clone(),
-            }
+            },
         ]);
-        
+
         let result = checker.check(&ast);
-        assert!(result.is_ok(), "Failed to type check struct: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to type check struct: {:?}",
+            result.err()
+        );
     }
 }

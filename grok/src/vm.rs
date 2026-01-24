@@ -1,11 +1,11 @@
 use crate::ir::{IRFunction, Opcode};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel};
-use tokio::sync::broadcast;
-use std::pin::Pin;
 use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::broadcast;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -70,12 +70,20 @@ impl Heap {
     }
 
     pub fn gc(&mut self, stack: &[Value], call_stack: &[Frame], globals: &HashMap<String, Value>) {
-        for m in self.marked.iter_mut() { *m = false; }
-        for val in stack { self.mark_value(val); }
-        for frame in call_stack {
-            for val in frame.locals.values() { self.mark_value(val); }
+        for m in self.marked.iter_mut() {
+            *m = false;
         }
-        for val in globals.values() { self.mark_value(val); }
+        for val in stack {
+            self.mark_value(val);
+        }
+        for frame in call_stack {
+            for val in frame.locals.values() {
+                self.mark_value(val);
+            }
+        }
+        for val in globals.values() {
+            self.mark_value(val);
+        }
         for i in 0..self.objects.len() {
             if !self.marked[i] && self.objects[i].is_some() {
                 self.objects[i] = None;
@@ -90,7 +98,9 @@ impl Heap {
                 self.marked[*idx] = true;
                 let obj = self.objects[*idx].clone();
                 if let Some(HeapObject::Struct(_, fields)) = obj {
-                    for v in fields.values() { self.mark_value(v); }
+                    for v in fields.values() {
+                        self.mark_value(v);
+                    }
                 }
             }
         }
@@ -149,10 +159,10 @@ impl VM {
         let (deadlock_notifier, _) = broadcast::channel(1);
         let registry = ActorRegistry {
             actors: HashMap::new(),
-            next_id: 1, 
+            next_id: 1,
             deadlock_notifier,
         };
-        
+
         Self {
             stack: Vec::new(),
             call_stack: Vec::new(),
@@ -180,7 +190,11 @@ impl VM {
         Ok(())
     }
 
-    pub fn execute(mut self, func_name: String, mut mailbox: Option<UnboundedReceiver<Value>>) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send>> {
+    pub fn execute(
+        mut self,
+        func_name: String,
+        mut mailbox: Option<UnboundedReceiver<Value>>,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send>> {
         Box::pin(async move {
             self.call_stack.push(Frame {
                 func_name: func_name.clone(),
@@ -200,20 +214,32 @@ impl VM {
                     loop {
                         tokio::time::sleep(Duration::from_millis(100)).await;
                         let reg_read = registry.lock().unwrap();
-                        
-                        let total_actors = reg_read.actors.len();
-                        if total_actors == 0 { continue; }
 
-                        let blocked_actors = reg_read.actors.values().filter(|a| a.status == ActorStatus::BlockedOnReceive).count();
-                        let active_actors = reg_read.actors.values().filter(|a| a.status == ActorStatus::Running).count();
+                        let total_actors = reg_read.actors.len();
+                        if total_actors == 0 {
+                            continue;
+                        }
+
+                        let blocked_actors = reg_read
+                            .actors
+                            .values()
+                            .filter(|a| a.status == ActorStatus::BlockedOnReceive)
+                            .count();
+                        let active_actors = reg_read
+                            .actors
+                            .values()
+                            .filter(|a| a.status == ActorStatus::Running)
+                            .count();
 
                         if active_actors == 0 && blocked_actors > 0 {
                             println!("DEADLOCK DETECTED");
                             let _ = reg_read.deadlock_notifier.send(());
                             break;
                         }
-                        
-                        if reg_read.actors.values().all(|a| a.status == ActorStatus::Stopped || a.status == ActorStatus::Failed) {
+
+                        if reg_read.actors.values().all(|a| {
+                            a.status == ActorStatus::Stopped || a.status == ActorStatus::Failed
+                        }) {
                             break;
                         }
                     }
@@ -240,9 +266,12 @@ impl VM {
 
                 {
                     let frame = self.call_stack.last_mut().unwrap();
-                    let func = self.functions.get(&frame.func_name).ok_or_else(|| format!("Function {} not found", frame.func_name))?;
+                    let func = self
+                        .functions
+                        .get(&frame.func_name)
+                        .ok_or_else(|| format!("Function {} not found", frame.func_name))?;
                     let block = &func.blocks[frame.current_block_idx];
-                    
+
                     if frame.current_instr_idx >= block.instructions.len() {
                         if frame.current_block_idx + 1 < func.blocks.len() {
                             frame.current_block_idx += 1;
@@ -259,7 +288,7 @@ impl VM {
                             continue;
                         }
                     }
-                    
+
                     let opcode = block.instructions[frame.current_instr_idx].opcode.clone();
                     frame.current_instr_idx += 1;
 
@@ -267,7 +296,11 @@ impl VM {
                         Opcode::PushInt(v) => self.stack.push(Value::Int(v)),
                         Opcode::PushBool(v) => self.stack.push(Value::Bool(v)),
                         Opcode::LoadVar(name) => {
-                            let val = frame.locals.get(&name).cloned().or_else(|| self.globals.get(&name).cloned());
+                            let val = frame
+                                .locals
+                                .get(&name)
+                                .cloned()
+                                .or_else(|| self.globals.get(&name).cloned());
                             match val {
                                 Some(v) => self.stack.push(v),
                                 None => return Err(format!("Variable {} not found", name)),
@@ -281,7 +314,9 @@ impl VM {
                             let b = self.stack.pop().ok_or("Stack underflow")?;
                             let a = self.stack.pop().ok_or("Stack underflow")?;
                             match (a, b) {
-                                (Value::Int(a), Value::Int(b)) => self.stack.push(Value::Int(a + b)),
+                                (Value::Int(a), Value::Int(b)) => {
+                                    self.stack.push(Value::Int(a + b))
+                                }
                                 _ => return Err("Invalid types for Add".to_string()),
                             }
                         }
@@ -289,7 +324,9 @@ impl VM {
                             let b = self.stack.pop().ok_or("Stack underflow")?;
                             let a = self.stack.pop().ok_or("Stack underflow")?;
                             match (a, b) {
-                                (Value::Int(a), Value::Int(b)) => self.stack.push(Value::Int(a - b)),
+                                (Value::Int(a), Value::Int(b)) => {
+                                    self.stack.push(Value::Int(a - b))
+                                }
                                 _ => return Err("Invalid types for Sub".to_string()),
                             }
                         }
@@ -297,7 +334,9 @@ impl VM {
                             let b = self.stack.pop().ok_or("Stack underflow")?;
                             let a = self.stack.pop().ok_or("Stack underflow")?;
                             match (a, b) {
-                                (Value::Int(a), Value::Int(b)) => self.stack.push(Value::Int(a * b)),
+                                (Value::Int(a), Value::Int(b)) => {
+                                    self.stack.push(Value::Int(a * b))
+                                }
                                 _ => return Err("Invalid types for Mul".to_string()),
                             }
                         }
@@ -306,7 +345,9 @@ impl VM {
                             let a = self.stack.pop().ok_or("Stack underflow")?;
                             match (a, b) {
                                 (Value::Int(a), Value::Int(b)) => {
-                                    if b == 0 { return Err("Division by zero".to_string()); }
+                                    if b == 0 {
+                                        return Err("Division by zero".to_string());
+                                    }
                                     self.stack.push(Value::Int(a / b))
                                 }
                                 _ => return Err("Invalid types for Div".to_string()),
@@ -326,7 +367,9 @@ impl VM {
                             let b = self.stack.pop().ok_or("Stack underflow")?;
                             let a = self.stack.pop().ok_or("Stack underflow")?;
                             match (a, b) {
-                                (Value::Int(a), Value::Int(b)) => self.stack.push(Value::Bool(a < b)),
+                                (Value::Int(a), Value::Int(b)) => {
+                                    self.stack.push(Value::Bool(a < b))
+                                }
                                 _ => return Err("Invalid types for Lt".to_string()),
                             }
                         }
@@ -334,7 +377,9 @@ impl VM {
                             let b = self.stack.pop().ok_or("Stack underflow")?;
                             let a = self.stack.pop().ok_or("Stack underflow")?;
                             match (a, b) {
-                                (Value::Int(a), Value::Int(b)) => self.stack.push(Value::Bool(a > b)),
+                                (Value::Int(a), Value::Int(b)) => {
+                                    self.stack.push(Value::Bool(a > b))
+                                }
                                 _ => return Err("Invalid types for Gt".to_string()),
                             }
                         }
@@ -342,7 +387,9 @@ impl VM {
                             let b = self.stack.pop().ok_or("Stack underflow")?;
                             let a = self.stack.pop().ok_or("Stack underflow")?;
                             match (a, b) {
-                                (Value::Int(a), Value::Int(b)) => self.stack.push(Value::Bool(a <= b)),
+                                (Value::Int(a), Value::Int(b)) => {
+                                    self.stack.push(Value::Bool(a <= b))
+                                }
                                 _ => return Err("Invalid types for Le".to_string()),
                             }
                         }
@@ -350,7 +397,9 @@ impl VM {
                             let b = self.stack.pop().ok_or("Stack underflow")?;
                             let a = self.stack.pop().ok_or("Stack underflow")?;
                             match (a, b) {
-                                (Value::Int(a), Value::Int(b)) => self.stack.push(Value::Bool(a >= b)),
+                                (Value::Int(a), Value::Int(b)) => {
+                                    self.stack.push(Value::Bool(a >= b))
+                                }
                                 _ => return Err("Invalid types for Ge".to_string()),
                             }
                         }
@@ -363,7 +412,8 @@ impl VM {
                         Opcode::PushStruct(name, fields) => {
                             let mut field_vals = HashMap::new();
                             for field_name in fields.iter().rev() {
-                                let val = self.stack.pop().ok_or("Stack underflow in PushStruct")?;
+                                let val =
+                                    self.stack.pop().ok_or("Stack underflow in PushStruct")?;
                                 field_vals.insert(field_name.clone(), val);
                             }
                             let mut heap = self.heap.lock().map_err(|e| e.to_string())?;
@@ -375,13 +425,21 @@ impl VM {
                             if let Value::Object(idx) = val {
                                 let heap = self.heap.lock().map_err(|e| e.to_string())?;
                                 if let Some(HeapObject::Struct(_, fields)) = heap.get(idx) {
-                                    let f_val = fields.get(&name).ok_or_else(|| format!("Field {} not found", name))?;
+                                    let f_val = fields
+                                        .get(&name)
+                                        .ok_or_else(|| format!("Field {} not found", name))?;
                                     self.stack.push(f_val.clone());
                                 } else {
-                                    return Err(format!("Cannot load field {} from non-struct object", name));
+                                    return Err(format!(
+                                        "Cannot load field {} from non-struct object",
+                                        name
+                                    ));
                                 }
                             } else {
-                                return Err(format!("Cannot load field {} from non-object value {:?}", name, val));
+                                return Err(format!(
+                                    "Cannot load field {} from non-object value {:?}",
+                                    name, val
+                                ));
                             }
                         }
                         Opcode::Spawn(actor_name, arg_count) => {
@@ -390,12 +448,12 @@ impl VM {
                                 args.push(self.stack.pop().ok_or("Stack underflow in Spawn")?);
                             }
                             args.reverse();
-                            
+
                             let (id, tx, rx) = {
                                 let mut reg = self.registry.lock().map_err(|e| e.to_string())?;
                                 let id = reg.next_id;
                                 reg.next_id += 1;
-                                
+
                                 let (tx, rx) = unbounded_channel();
                                 let meta = ActorMetadata {
                                     id,
@@ -407,13 +465,13 @@ impl VM {
                                     status: ActorStatus::Running,
                                     mailbox_tx: tx.clone(),
                                 };
-                                
+
                                 if let Some(parent_id) = self.current_actor_id {
                                     if let Some(parent_meta) = reg.actors.get_mut(&parent_id) {
                                         parent_meta.children.push(id);
                                     }
                                 }
-                                
+
                                 reg.actors.insert(id, meta);
                                 (id, tx, rx)
                             };
@@ -433,15 +491,18 @@ impl VM {
                                     registry: registry.clone(),
                                     current_actor_id: Some(id),
                                 };
-                                
+
                                 let res = vm.execute(actor_name_clone.clone(), Some(rx)).await;
-                                
+
                                 if let Err(e) = res {
                                     let mut reg = registry.lock().unwrap();
                                     if let Some(meta) = reg.actors.get_mut(&id) {
                                         meta.status = ActorStatus::Failed;
-                                        println!("Actor {} failed: {}. Policy says: Restart.", id, e);
-                                        
+                                        println!(
+                                            "Actor {} failed: {}. Policy says: Restart.",
+                                            id, e
+                                        );
+
                                         if meta.policy == SupervisionPolicy::OneForOne {
                                             // TODO: Real recursive restart would need access to ActorMetadata::args and func_name
                                             // and re-call tokio::spawn. This requires a helper.
@@ -454,7 +515,8 @@ impl VM {
                         }
                         Opcode::Send => {
                             let msg = self.stack.pop().ok_or("Stack underflow in Send (msg)")?;
-                            let target = self.stack.pop().ok_or("Stack underflow in Send (target)")?;
+                            let target =
+                                self.stack.pop().ok_or("Stack underflow in Send (target)")?;
                             if let Value::Actor(id) = target {
                                 let reg = self.registry.lock().map_err(|e| e.to_string())?;
                                 if let Some(meta) = reg.actors.get(&id) {
@@ -468,13 +530,21 @@ impl VM {
                             msg_to_receive = true;
                         }
                         Opcode::Jmp(label) => {
-                            frame.current_block_idx = func.blocks.iter().position(|b| b.label == label).ok_or("Invalid jump")?;
+                            frame.current_block_idx = func
+                                .blocks
+                                .iter()
+                                .position(|b| b.label == label)
+                                .ok_or("Invalid jump")?;
                             frame.current_instr_idx = 0;
                         }
                         Opcode::JmpIfFalse(label) => {
                             let cond = self.stack.pop();
                             if let Some(Value::Bool(false)) = cond {
-                                frame.current_block_idx = func.blocks.iter().position(|b| b.label == label).ok_or("Invalid jump")?;
+                                frame.current_block_idx = func
+                                    .blocks
+                                    .iter()
+                                    .position(|b| b.label == label)
+                                    .ok_or("Invalid jump")?;
                                 frame.current_instr_idx = 0;
                             }
                         }
@@ -484,8 +554,11 @@ impl VM {
                                 args.push(self.stack.pop().ok_or("Stack underflow in Call")?);
                             }
                             args.reverse();
-        
-                            let target_func = self.functions.get(&name).ok_or_else(|| format!("Function {} not found", name))?;
+
+                            let target_func = self
+                                .functions
+                                .get(&name)
+                                .ok_or_else(|| format!("Function {} not found", name))?;
                             let mut locals = HashMap::new();
                             for (param, val) in target_func.params.iter().zip(args.into_iter()) {
                                 locals.insert(param.clone(), val);
@@ -515,12 +588,12 @@ impl VM {
                         if let Some(id) = self.current_actor_id {
                             self.set_actor_status(id, ActorStatus::BlockedOnReceive)?;
                         }
-                        
+
                         let msg = tokio::select! {
                             m = rx.recv() => m,
                             _ = deadlock_rx.recv() => return Err("Execution aborted due to deadlock".to_string()),
                         };
-                        
+
                         if let Some(id) = self.current_actor_id {
                             self.set_actor_status(id, ActorStatus::Running)?;
                         }

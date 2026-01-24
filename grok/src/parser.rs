@@ -1,4 +1,4 @@
-use crate::ast::{AstNode, Param, Type, Span, MatchArm, Pattern};
+use crate::ast::{AstNode, MatchArm, Param, Pattern, Span, Type};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while, take_while1},
@@ -19,6 +19,7 @@ fn span_from(input: Input) -> Span {
     }
 }
 
+#[derive(Debug)]
 pub struct Parser;
 
 impl Parser {
@@ -35,15 +36,13 @@ impl Parser {
     }
 }
 
-fn ws<'a, F, O>(inner: F) -> impl FnMut(Input<'a>) -> IResult<Input<'a>, O, nom::error::Error<Input<'a>>>
+fn ws<'a, F, O>(
+    inner: F,
+) -> impl FnMut(Input<'a>) -> IResult<Input<'a>, O, nom::error::Error<Input<'a>>>
 where
     F: FnMut(Input<'a>) -> IResult<Input<'a>, O, nom::error::Error<Input<'a>>>,
 {
-    delimited(
-        skip_ws_and_comments,
-        inner,
-        skip_ws_and_comments,
-    )
+    delimited(skip_ws_and_comments, inner, skip_ws_and_comments)
 }
 
 fn skip_ws_and_comments(input: Input) -> IResult<Input, ()> {
@@ -93,19 +92,24 @@ fn macro_rules_def(input: Input) -> IResult<Input, AstNode> {
             ws(identifier),
             delimited(
                 ws(char('{')),
-                many0(ws(
-                    tuple((
-                        delimited(ws(char('(')), pattern, ws(char(')'))),
-                        ws(tag("=>")),
-                        ws(delimited(ws(char('{')), many0(ws(statement)), ws(char('}')))),
-                    ))
-                )),
+                many0(ws(tuple((
+                    delimited(ws(char('(')), pattern, ws(char(')'))),
+                    ws(tag("=>")),
+                    ws(delimited(
+                        ws(char('{')),
+                        many0(ws(statement)),
+                        ws(char('}')),
+                    )),
+                )))),
                 ws(char('}')),
             ),
         )),
         move |(_, _, name, rules)| AstNode::MacroDef {
             name,
-            rules: rules.into_iter().map(|(p, _, body)| (p, AstNode::Block(body))).collect(),
+            rules: rules
+                .into_iter()
+                .map(|(p, _, body)| (p, AstNode::Block(body)))
+                .collect(),
             span: start_span.clone(),
         },
     )(input)
@@ -118,7 +122,10 @@ fn function_def(input: Input) -> IResult<Input, AstNode> {
             tag("fn"),
             ws(identifier),
             delimited(char('('), separated_list0(char(','), ws(param)), char(')')),
-            opt(preceded(ws(tag("->")), ws(type_annotation))),
+            opt(preceded(ws(tag("->")), alt((
+                map(ws(tag("()")), |_| Type::Primitive("()".to_string())),
+                ws(type_annotation)
+            )))),
             ws(block),
         )),
         move |(_, name, params, ret_type, body)| AstNode::FunctionDef {
@@ -140,7 +147,10 @@ fn struct_def(input: Input) -> IResult<Input, AstNode> {
             ws(identifier),
             delimited(
                 char('{'),
-                separated_list0(ws(char(',')), ws(pair(identifier, preceded(ws(char(':')), type_annotation)))),
+                separated_list0(
+                    ws(char(',')),
+                    ws(pair(identifier, preceded(ws(char(':')), type_annotation))),
+                ),
                 char('}'),
             ),
         )),
@@ -161,7 +171,13 @@ fn enum_def(input: Input) -> IResult<Input, AstNode> {
             ws(identifier),
             delimited(
                 char('{'),
-                separated_list0(ws(char(',')), ws(pair(identifier, opt(delimited(char('('), type_annotation, char(')')))))),
+                separated_list0(
+                    ws(char(',')),
+                    ws(pair(
+                        identifier,
+                        opt(delimited(char('('), type_annotation, char(')'))),
+                    )),
+                ),
                 char('}'),
             ),
         )),
@@ -222,10 +238,10 @@ fn let_stmt(input: Input) -> IResult<Input, AstNode> {
             tag("let"),
             opt(ws(tag("mut"))),
             ws(identifier),
-            opt(preceded(ws(char(':')), type_annotation)),
-            char('='),
+            opt(preceded(ws(char(':')), ws(type_annotation))),
+            ws(char('=')),
             ws(expression),
-            opt(char(';')),
+            opt(ws(char(';'))),
         )),
         move |(_, mut_kw, name, ty, _, expr, _)| AstNode::LetStmt {
             name,
@@ -240,7 +256,10 @@ fn let_stmt(input: Input) -> IResult<Input, AstNode> {
 fn return_stmt(input: Input) -> IResult<Input, AstNode> {
     let start_span = span_from(input);
     map(
-        preceded(tag("return"), terminated(opt(ws(expression)), opt(char(';')))),
+        preceded(
+            tag("return"),
+            terminated(opt(ws(expression)), opt(char(';'))),
+        ),
         move |val| AstNode::Return {
             value: val.map(Box::new),
             span: start_span.clone(),
@@ -250,12 +269,18 @@ fn return_stmt(input: Input) -> IResult<Input, AstNode> {
 
 fn break_stmt(input: Input) -> IResult<Input, AstNode> {
     let start_span = span_from(input);
-    value(AstNode::Break { span: start_span }, terminated(tag("break"), opt(char(';'))))(input)
+    value(
+        AstNode::Break { span: start_span },
+        terminated(tag("break"), opt(char(';'))),
+    )(input)
 }
 
 fn continue_stmt(input: Input) -> IResult<Input, AstNode> {
     let start_span = span_from(input);
-    value(AstNode::Continue { span: start_span }, terminated(tag("continue"), opt(char(';'))))(input)
+    value(
+        AstNode::Continue { span: start_span },
+        terminated(tag("continue"), opt(char(';'))),
+    )(input)
 }
 
 fn block(input: Input) -> IResult<Input, AstNode> {
@@ -280,7 +305,13 @@ fn while_loop(input: Input) -> IResult<Input, AstNode> {
 fn for_loop(input: Input) -> IResult<Input, AstNode> {
     let start_span = span_from(input);
     map(
-        tuple((tag("for"), ws(identifier), ws(tag("in")), ws(expression), ws(block))),
+        tuple((
+            tag("for"),
+            ws(identifier),
+            ws(tag("in")),
+            ws(expression),
+            ws(block),
+        )),
         move |(_, var, _, iterable, body)| AstNode::ForLoop {
             var,
             iterable: Box::new(iterable),
@@ -291,7 +322,15 @@ fn for_loop(input: Input) -> IResult<Input, AstNode> {
 }
 
 fn expression(input: Input) -> IResult<Input, AstNode> {
-    alt((if_expr, match_expr, receive_expr, spawn_expr, binary_expr, unary_expr, postfix_expr))(input)
+    alt((
+        if_expr,
+        match_expr,
+        receive_expr,
+        spawn_expr,
+        binary_expr,
+        unary_expr,
+        postfix_expr,
+    ))(input)
 }
 
 fn unary_expr(input: Input) -> IResult<Input, AstNode> {
@@ -306,9 +345,9 @@ fn unary_expr(input: Input) -> IResult<Input, AstNode> {
                 op: op.to_string(),
                 operand: Box::new(expr),
                 span: start_span.clone(),
-            }
+            },
         ),
-        postfix_expr
+        postfix_expr,
     ))(input)
 }
 
@@ -336,11 +375,7 @@ fn match_expr(input: Input) -> IResult<Input, AstNode> {
         tuple((
             tag("match"),
             ws(expression),
-            delimited(
-                char('{'),
-                many0(ws(match_arm)),
-                char('}'),
-            ),
+            delimited(char('{'), many0(ws(match_arm)), char('}')),
         )),
         move |(_, scrutinee, arms)| AstNode::MatchExpr {
             scrutinee: Box::new(scrutinee),
@@ -355,11 +390,7 @@ fn receive_expr(input: Input) -> IResult<Input, AstNode> {
     map(
         tuple((
             tag("receive"),
-            delimited(
-                ws(char('{')),
-                many0(ws(match_arm)),
-                ws(char('}')),
-            ),
+            delimited(ws(char('{')), many0(ws(match_arm)), ws(char('}'))),
         )),
         move |(_, arms)| AstNode::Receive {
             arms,
@@ -376,7 +407,10 @@ fn spawn_expr(input: Input) -> IResult<Input, AstNode> {
             ws(identifier),
             delimited(
                 ws(char('{')),
-                separated_list0(ws(char(',')), pair(identifier, preceded(ws(char(':')), expression))),
+                separated_list0(
+                    ws(char(',')),
+                    pair(identifier, preceded(ws(char(':')), expression)),
+                ),
                 ws(char('}')),
             ),
         )),
@@ -420,7 +454,15 @@ fn binary_expr(input: Input) -> IResult<Input, AstNode> {
     map(
         tuple((
             postfix_expr,
-            ws(alt((tag("+"), tag("-"), tag("*"), tag("/"), tag("=="), tag("!="), tag("!")))),
+            ws(alt((
+                tag("+"),
+                tag("-"),
+                tag("*"),
+                tag("/"),
+                tag("=="),
+                tag("!="),
+                tag("!"),
+            ))),
             expression,
         )),
         move |(left, op_span, right)| {
@@ -445,7 +487,7 @@ fn binary_expr(input: Input) -> IResult<Input, AstNode> {
 
 fn postfix_expr(input: Input) -> IResult<Input, AstNode> {
     let (mut input, mut left) = primary_expr(input)?;
-    
+
     loop {
         let start_span = span_from(input);
         if let Ok((i, _)) = ws(char('.'))(input) {
@@ -456,7 +498,12 @@ fn postfix_expr(input: Input) -> IResult<Input, AstNode> {
                 span: start_span,
             };
             input = i2;
-        } else if let Ok((i, args)) = delimited(ws(char('(')), separated_list0(ws(char(',')), expression), ws(char(')')))(input) {
+        } else if let Ok((i, args)) = delimited(
+            ws(char('(')),
+            separated_list0(ws(char(',')), expression),
+            ws(char(')')),
+        )(input)
+        {
             left = AstNode::FunctionCall {
                 func: Box::new(left),
                 args,
@@ -467,7 +514,7 @@ fn postfix_expr(input: Input) -> IResult<Input, AstNode> {
             break;
         }
     }
-    
+
     Ok((input, left))
 }
 
@@ -480,10 +527,16 @@ fn primary_expr(input: Input) -> IResult<Input, AstNode> {
     alt((
         macro_call,
         struct_literal,
-        map(ws(tag("true")), move |_| AstNode::BoolLiteral(true, s1.clone())),
-        map(ws(tag("false")), move |_| AstNode::BoolLiteral(false, s2.clone())),
+        map(ws(tag("true")), move |_| {
+            AstNode::BoolLiteral(true, s1.clone())
+        }),
+        map(ws(tag("false")), move |_| {
+            AstNode::BoolLiteral(false, s2.clone())
+        }),
         map(identifier, move |id| AstNode::Identifier(id, s3.clone())),
-        map(digit1, move |n: Input| AstNode::IntLiteral(n.parse().unwrap(), s4.clone())),
+        map(digit1, move |n: Input| {
+            AstNode::IntLiteral(n.parse().unwrap(), s4.clone())
+        }),
         delimited(char('('), expression, char(')')),
     ))(input)
 }
@@ -495,7 +548,10 @@ fn struct_literal(input: Input) -> IResult<Input, AstNode> {
             identifier,
             delimited(
                 ws(char('{')),
-                separated_list0(ws(char(',')), pair(identifier, preceded(ws(char(':')), expression))),
+                separated_list0(
+                    ws(char(',')),
+                    pair(identifier, preceded(ws(char(':')), expression)),
+                ),
                 ws(char('}')),
             ),
         )),
@@ -513,7 +569,11 @@ fn macro_call(input: Input) -> IResult<Input, AstNode> {
         tuple((
             identifier,
             char('!'),
-            delimited(char('('), separated_list0(ws(char(',')), expression), char(')')),
+            delimited(
+                char('('),
+                separated_list0(ws(char(',')), expression),
+                char(')'),
+            ),
         )),
         move |(name, _, args)| AstNode::MacroCall {
             name,

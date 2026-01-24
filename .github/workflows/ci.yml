@@ -1,0 +1,64 @@
+name: GrokLang CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+        working-directory: grok
+
+      - name: Clippy Linting
+        run: cargo clippy -- -D warnings
+        working-directory: grok
+
+      - name: Run Tests
+        run: cargo test --verbose
+        working-directory: grok
+
+  build:
+    name: Build Release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Release
+        run: cargo build --release --verbose
+        working-directory: grok
+        
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok-${{ matrix.os }}
+          path: |
+            grok/target/release/grok
+            grok/target/release/libgrok.*

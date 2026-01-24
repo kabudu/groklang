@@ -1,6 +1,6 @@
-use grok::parser::Parser;
-use grok::macro_expander::MacroExpander;
 use grok::ast::{AstNode, Span};
+use grok::macro_expander::MacroExpander;
+use grok::parser::Parser;
 
 #[test]
 fn test_macro_expansion() {
@@ -12,10 +12,10 @@ fn test_macro_expansion() {
     "#;
     let parser = Parser::new();
     let ast = parser.parse(source).unwrap();
-    
+
     let mut expander = MacroExpander::new();
     let expanded = expander.expand(ast);
-    
+
     // The resultant AST should have 'let a = 42;'
     if let AstNode::Program(nodes) = expanded {
         // MacroDef is filtered out, so first node is LetStmt
@@ -51,26 +51,40 @@ fn test_macro_multiple_rules() {
     let parser = Parser::new();
     let ast = parser.parse(source).unwrap();
     if let AstNode::Program(ref nodes) = ast {
-        assert_eq!(nodes.len(), 3, "Expected 3 nodes before expansion, got {:?}", nodes);
+        assert_eq!(
+            nodes.len(),
+            3,
+            "Expected 3 nodes before expansion, got {:?}",
+            nodes
+        );
     }
-    
+
     let mut expander = MacroExpander::new();
     let expanded = expander.expand(ast);
-    
+
     if let AstNode::Program(nodes) = expanded {
-        assert_eq!(nodes.len(), 2, "Expected 2 nodes after expansion, got {:?}", nodes);
+        assert_eq!(
+            nodes.len(),
+            2,
+            "Expected 2 nodes after expansion, got {:?}",
+            nodes
+        );
         // nodes[0] is x = 10
         // nodes[1] is y = 20
         assert_eq!(nodes.len(), 2);
         if let AstNode::LetStmt { expr, .. } = &nodes[0] {
-             if let AstNode::Block(s) = &**expr {
-                 if let AstNode::IntLiteral(v, _) = s[0] { assert_eq!(v, 10); }
-             }
+            if let AstNode::Block(s) = &**expr {
+                if let AstNode::IntLiteral(v, _) = s[0] {
+                    assert_eq!(v, 10);
+                }
+            }
         }
         if let AstNode::LetStmt { expr, .. } = &nodes[1] {
-             if let AstNode::Block(s) = &**expr {
-                 if let AstNode::IntLiteral(v, _) = s[0] { assert_eq!(v, 20); }
-             }
+            if let AstNode::Block(s) = &**expr {
+                if let AstNode::IntLiteral(v, _) = s[0] {
+                    assert_eq!(v, 20);
+                }
+            }
         }
     }
 }

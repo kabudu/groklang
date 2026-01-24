@@ -1,5 +1,5 @@
-use tokio::sync::mpsc;
 use std::collections::HashMap;
+use tokio::sync::mpsc;
 
 pub struct ActorSystem {
     actors: HashMap<String, mpsc::Sender<Message>>,
@@ -24,7 +24,7 @@ impl ActorSystem {
     {
         let (tx, mut rx) = mpsc::channel(32);
         self.actors.insert(name.clone(), tx);
-        
+
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 handler(msg);

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use grok::parser::Parser;
     use grok::ir::IRGenerator;
+    use grok::parser::Parser;
     use grok::vm::VM;
 
     #[tokio::test]
@@ -21,7 +21,7 @@ mod tests {
         let ast = parser.parse(input).unwrap();
         let mut gen = IRGenerator::new();
         let ir = gen.generate(&ast);
-        
+
         let mut vm = VM::new();
         vm.load_program(&ir);
         let result = vm.execute("main".to_string(), None).await;

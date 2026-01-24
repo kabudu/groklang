@@ -1,8 +1,8 @@
+use crate::ir::IRGenerator;
+use crate::parser::Parser;
+use crate::vm::VM;
 use pyo3::prelude::*;
 use std::sync::{Arc, Mutex};
-use crate::parser::Parser;
-use crate::ir::IRGenerator;
-use crate::vm::VM;
 
 #[pyclass]
 struct GrokInterpreter {
@@ -30,16 +30,16 @@ impl GrokInterpreter {
 
         // We need to create a runtime for the async VM execution
         let rt = tokio::runtime::Runtime::new().unwrap();
-        
+
         let result = rt.block_on(async {
-            // Note: In a real FFI scenario, reuse the VM state correctly. 
+            // Note: In a real FFI scenario, reuse the VM state correctly.
             // For this basic binding, we reload and run.
             // A more complex implementation would separate compilation and execution steps.
-            
+
             // To be safe with Arc<Mutex<VM>>, we'd need to lock, but VM::execute consumes self in our current design.
             // To support FFI properly, we'd need to refactor VM::execute to take &mut self.
             // For now, let's just clone a fresh one for the demo, or modify VM to be FFI friendly.
-            
+
             // Temporary workaround: Create a new VM instance for this run, ignoring persisted state for now.
             // This is "stateless" execution from Python's perspective.
             let mut vm = VM::new();
