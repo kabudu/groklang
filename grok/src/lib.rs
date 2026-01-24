@@ -11,6 +11,7 @@ pub mod lexer;
 pub mod lsp;
 pub mod macro_expander;
 pub mod optimizer;
+pub mod optimizations;
 pub mod package_manager;
 pub mod parser;
 pub mod python_ffi;

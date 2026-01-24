@@ -53,3 +53,11 @@
 - [x] **4.2 Productionization**
     - [x] CI/CD pipelines.
     - [x] Performance benchmarking (comparisons to Python).
+
+## Phase 5: VM Optimizations
+- [x] **5.1 Performance Optimizations**
+    - [x] Bytecode Specialization (IntAdd, IntMul, LoadLocalFast, etc.)
+    - [x] Inline Caching (function, field, and slot caches)
+    - [x] Hot Path Detection (100-call threshold)
+    - [x] Tail Call Optimization (TailCall opcode)
+    - [x] Fast Locals (33x speedup over HashMap)
