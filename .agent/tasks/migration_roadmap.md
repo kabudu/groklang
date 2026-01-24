@@ -50,6 +50,6 @@
 - [x] **4.1 Tooling**
     - [x] LSP completion, diagnostics, and hover.
     - [x] CLI enhancements.
-- [/] **4.2 Productionization**
+- [x] **4.2 Productionization**
     - [x] CI/CD pipelines.
-    - [ ] Performance benchmarking (comparisons to Python).
+    - [x] Performance benchmarking (comparisons to Python).
