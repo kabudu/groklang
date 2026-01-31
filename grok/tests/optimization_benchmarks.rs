@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod optimization_benchmarks {
-    use grok::ast::{AstNode, Param, Span};
-    use grok::ir::{IRGenerator, IRFunction, IRBlock, IRInstruction, Opcode};
+    use grok::ir::{IRFunction, IRBlock, IRInstruction, Opcode};
     use grok::optimizations::{OptimizedVM, BytecodeOptimizer, HotPathTracker, HOT_THRESHOLD};
-    use grok::vm::{Value, VM};
+    use grok::vm::Value;
     use std::time::Instant;
 
     fn create_fib_ir() -> Vec<IRFunction> {

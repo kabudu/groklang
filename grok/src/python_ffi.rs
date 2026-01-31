@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 #[pyclass]
 struct GrokInterpreter {
-    vm: Arc<Mutex<VM>>,
+    _vm: Arc<Mutex<VM>>,
 }
 
 #[pymethods]
@@ -14,7 +14,7 @@ impl GrokInterpreter {
     #[new]
     fn new() -> Self {
         GrokInterpreter {
-            vm: Arc::new(Mutex::new(VM::new())),
+            _vm: Arc::new(Mutex::new(VM::new())),
         }
     }
 

@@ -449,7 +449,7 @@ impl VM {
                             }
                             args.reverse();
 
-                            let (id, tx, rx) = {
+                            let (id, _tx, rx) = {
                                 let mut reg = self.registry.lock().map_err(|e| e.to_string())?;
                                 let id = reg.next_id;
                                 reg.next_id += 1;
@@ -482,7 +482,7 @@ impl VM {
                             let actor_name_clone = actor_name.clone();
 
                             tokio::spawn(async move {
-                                let mut vm = VM {
+                                let vm = VM {
                                     stack: Vec::new(),
                                     call_stack: Vec::new(),
                                     functions,

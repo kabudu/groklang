@@ -1,4 +1,4 @@
-use crate::ast::{AstNode, Pattern, Span};
+use crate::ast::{AstNode, Pattern};
 use std::collections::HashMap;
 
 pub struct MacroExpander {

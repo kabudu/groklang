@@ -2,7 +2,7 @@ use crate::ast::{AstNode, MatchArm, Param, Pattern, Span, Type};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while, take_while1},
-    character::complete::{char, digit1, multispace0, multispace1},
+    character::complete::{char, digit1},
     combinator::{map, opt, value},
     multi::{many0, separated_list0},
     sequence::{delimited, pair, preceded, terminated, tuple},

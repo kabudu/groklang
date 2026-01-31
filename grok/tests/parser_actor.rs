@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use grok::ast::AstNode;
     use grok::parser::Parser;
 
     #[test]

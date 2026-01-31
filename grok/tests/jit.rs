@@ -5,8 +5,8 @@ mod tests {
 
     #[test]
     fn test_jit_compile() {
-        let mut jit = JITCompiler::new();
-        let func = IRFunction {
+        let _jit = JITCompiler::new();
+        let _func = IRFunction {
             name: "test".to_string(),
             params: vec![],
             blocks: vec![],

@@ -1,5 +1,5 @@
 // grok/src/type_checker.rs
-use crate::ast::{AstNode, MatchArm, Type};
+use crate::ast::{AstNode, Type};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -436,12 +436,7 @@ impl TypeChecker {
                     });
                 }
                 (Type::Struct(n1, _), Type::Struct(n2, _)) if n1 == n2 => {}
-                (ty @ Type::Actor(_), Type::Variable(name)) => {
-                    substitution.insert(name, ty);
-                }
-                (Type::Variable(name), ty @ Type::Actor(_)) => {
-                    substitution.insert(name, ty);
-                }
+
                 (l, r) => return Err(format!("Type mismatch: {:?} vs {:?}", l, r)),
             }
         }

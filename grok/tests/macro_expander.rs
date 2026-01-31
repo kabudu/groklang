@@ -1,4 +1,4 @@
-use grok::ast::{AstNode, Span};
+use grok::ast::AstNode;
 use grok::macro_expander::MacroExpander;
 use grok::parser::Parser;
 

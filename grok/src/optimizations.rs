@@ -3,7 +3,9 @@
 // VM Optimizations Module
 // Implements: Hot-path JIT, Bytecode Specialization, Inline Caching, Tail Call Optimization
 
-use crate::ir::{IRFunction, IRBlock, IRInstruction, Opcode};
+use crate::ir::{IRFunction, IRBlock, Opcode};
+#[cfg(test)]
+use crate::ir::IRInstruction;
 use std::collections::HashMap;
 use std::sync::Arc;
 

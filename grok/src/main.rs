@@ -1,21 +1,12 @@
 use clap::{Parser as ClapParser, Subcommand};
 use std::fs;
 
-mod ai;
-mod ast;
-mod ir;
-mod lexer;
-mod lsp;
-mod macro_expander;
-mod parser;
-mod type_checker;
-mod vm;
-
-use ir::IRGenerator;
-use macro_expander::MacroExpander;
-use parser::Parser as GrokParser;
-use type_checker::TypeChecker;
-use vm::VM;
+use grok::ir::IRGenerator;
+use grok::macro_expander::MacroExpander;
+use grok::parser::Parser as GrokParser;
+use grok::type_checker::TypeChecker;
+use grok::vm::VM;
+use grok::lsp;
 
 #[derive(ClapParser)]
 #[command(name = "grok")]
