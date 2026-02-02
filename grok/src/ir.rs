@@ -236,6 +236,75 @@ impl IRGenerator {
                     instructions: Vec::new(),
                 });
             }
+            AstNode::WhileLoop {
+                condition, body, ..
+            } => {
+                let id = self.temp_counter;
+                self.temp_counter += 1;
+                let cond_label = format!("while_cond_{}", id);
+                let body_label = format!("while_body_{}", id);
+                let end_label = format!("while_end_{}", id);
+
+                // Jump to condition
+                let current_block = blocks.last_mut().unwrap();
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::Jmp(cond_label.clone()),
+                });
+
+                // Condition
+                blocks.push(IRBlock {
+                    label: cond_label.clone(),
+                    instructions: Vec::new(),
+                });
+                self.gen_expr(condition, blocks);
+                blocks.last_mut().unwrap().instructions.push(IRInstruction {
+                    opcode: Opcode::JmpIfFalse(end_label.clone()),
+                });
+
+                // Body
+                blocks.push(IRBlock {
+                    label: body_label,
+                    instructions: Vec::new(),
+                });
+                self.gen_expr(body, blocks);
+                blocks.last_mut().unwrap().instructions.push(IRInstruction {
+                    opcode: Opcode::Jmp(cond_label),
+                });
+
+                // End
+                blocks.push(IRBlock {
+                    label: end_label,
+                    instructions: Vec::new(),
+                });
+            }
+            AstNode::Loop { body, .. } => {
+                let id = self.temp_counter;
+                self.temp_counter += 1;
+                let body_label = format!("loop_body_{}", id);
+                let end_label = format!("loop_end_{}", id);
+
+                // Jump to body
+                let current_block = blocks.last_mut().unwrap();
+                current_block.instructions.push(IRInstruction {
+                    opcode: Opcode::Jmp(body_label.clone()),
+                });
+
+                // Body
+                blocks.push(IRBlock {
+                    label: body_label.clone(),
+                    instructions: Vec::new(),
+                });
+                self.gen_expr(body, blocks);
+                blocks.last_mut().unwrap().instructions.push(IRInstruction {
+                    opcode: Opcode::Jmp(body_label),
+                });
+
+                // End
+                blocks.push(IRBlock {
+                    label: end_label,
+                    instructions: Vec::new(),
+                });
+            }
             AstNode::MatchExpr {
                 scrutinee, arms, ..
             } => {

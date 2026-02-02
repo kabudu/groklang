@@ -4,6 +4,7 @@
 // Implements: Hot-path JIT, Bytecode Specialization, Inline Caching, Tail Call Optimization
 
 use crate::ir::{IRFunction, IRBlock, Opcode};
+use crate::jit::JITCompiler;
 #[cfg(test)]
 use crate::ir::IRInstruction;
 use std::collections::HashMap;
@@ -35,6 +36,9 @@ pub enum SpecializedOpcode {
     LoadLocalFast(usize),      // Direct slot access instead of HashMap lookup
     StoreLocalFast(usize),     // Direct slot access instead of HashMap lookup
     
+    // Fast calls with inline caching
+    CallFast(String, usize, usize), // name, arg_count, call_site_id
+    
     // Tail call optimization
     TailCall(String, usize),   // Reuse current frame instead of allocating new one
     
@@ -61,6 +65,7 @@ pub struct SpecializedFunction {
     pub blocks: Vec<SpecializedBlock>,
     pub is_hot: bool,
     pub call_count: u64,
+    pub jit_code: Option<*const u8>,
 }
 
 // ============================================================================
@@ -119,7 +124,7 @@ impl InlineCache {
 // ============================================================================
 // Track function call counts and identify hot functions for JIT compilation
 
-pub const HOT_THRESHOLD: u64 = 100;  // Number of calls before considered "hot"
+pub const HOT_THRESHOLD: u64 = 10;  // Number of calls before considered "hot"
 
 #[derive(Debug)]
 pub struct HotPathTracker {
@@ -222,6 +227,7 @@ impl BytecodeOptimizer {
             blocks: specialized_blocks,
             is_hot: false,
             call_count: 0,
+            jit_code: None,
         }
     }
     
@@ -283,13 +289,14 @@ impl BytecodeOptimizer {
                 SpecializedOpcode::PushSmallInt(*v)
             }
             
-            // Tail call optimization
+            // Optimized calls with inline caching
             Opcode::Call(name, arg_count) => {
                 if is_tail_call(block, idx) {
                     SpecializedOpcode::TailCall(name.clone(), *arg_count)
                 } else {
+                    let site_id = self.call_site_counter;
                     self.call_site_counter += 1;
-                    SpecializedOpcode::Generic(opcode.clone())
+                    SpecializedOpcode::CallFast(name.clone(), *arg_count, site_id)
                 }
             }
             
@@ -489,6 +496,11 @@ impl OptimizedContext {
                 Ok(())
             }
             
+            SpecializedOpcode::CallFast(_, _, _) => {
+                // Handled in the VM loop for access to func registry
+                Ok(())
+            }
+            
             SpecializedOpcode::PushSmallInt(v) => {
                 self.push(Value::Int(*v));
                 Ok(())
@@ -513,8 +525,9 @@ impl OptimizedContext {
 
 pub struct OptimizedVM {
     pub context: OptimizedContext,
-    pub functions: HashMap<String, SpecializedFunction>,
+    pub functions: HashMap<String, Arc<SpecializedFunction>>,
     pub optimizer: BytecodeOptimizer,
+    pub jit: JITCompiler,
 }
 
 impl OptimizedVM {
@@ -523,13 +536,14 @@ impl OptimizedVM {
             context: OptimizedContext::new(),
             functions: HashMap::new(),
             optimizer: BytecodeOptimizer::new(),
+            jit: JITCompiler::new(),
         }
     }
     
     pub fn load_program(&mut self, ir_functions: &[IRFunction]) {
         for func in ir_functions {
             let specialized = self.optimizer.optimize(func);
-            self.functions.insert(func.name.clone(), specialized);
+            self.functions.insert(func.name.clone(), Arc::new(specialized));
         }
     }
     
@@ -539,24 +553,86 @@ impl OptimizedVM {
             self.context.locals.set(idx, arg);
         }
         
-        self.execute_function(func_name)
-    }
-    
-    fn execute_function(&mut self, func_name: &str) -> Result<Value, String> {
-        // Track hot paths
+        // Fast path: if JIT exists, run it
+        let jit_info = self.functions.get(func_name).and_then(|f| f.jit_code.map(|ptr| (ptr, f.clone())));
+        if let Some((ptr, f_arc)) = jit_info {
+            return self.execute_jit(ptr, &f_arc);
+        }
+
+        // Potential JIT trigger
         let became_hot = self.context.hot_tracker.record_call(func_name);
         if became_hot {
-            // In a real implementation, we would trigger JIT compilation here
-            // For now, just mark the function as hot
-            if let Some(func) = self.functions.get_mut(func_name) {
-                func.is_hot = true;
+            if let Some(f_arc) = self.functions.get_mut(func_name) {
+                if let Some(specialized) = Arc::get_mut(f_arc) {
+                    specialized.is_hot = true;
+                    match self.jit.compile(specialized) {
+                        Ok(ptr) => {
+                            specialized.jit_code = Some(ptr);
+                            println!("JIT compiled hot function: {}", func_name);
+                            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                        }
+                        Err(e) => eprintln!("JIT failed: {}", e),
+                    }
+                }
             }
         }
         
+        // Try JIT again if it was just compiled
+        if became_hot {
+             let jit_info = self.functions.get(func_name).and_then(|f| f.jit_code.map(|ptr| (ptr, f.clone())));
+             if let Some((ptr, f_arc)) = jit_info {
+                return self.execute_jit(ptr, &f_arc);
+             }
+        }
+
         let func = self.functions.get(func_name)
             .ok_or_else(|| format!("Function {} not found", func_name))?
             .clone();
-        
+            
+        self.execute_function_internal(func)
+    }
+
+    /// Executes JIT compiled code.
+    fn execute_jit(&mut self, jit_ptr: *const u8, func: &SpecializedFunction) -> Result<Value, String> {
+        // Define function pointer type: extern "C" fn(i64, ...) -> i64
+        // For simplicity, we handle up to 2 arguments in this POC.
+        type JitFunc0 = extern "C" fn() -> i64;
+        type JitFunc1 = extern "C" fn(i64) -> i64;
+        type JitFunc2 = extern "C" fn(i64, i64) -> i64;
+
+        let res = match func.params.len() {
+            0 => {
+                let f: JitFunc0 = unsafe { std::mem::transmute(jit_ptr) };
+                f()
+            }
+            1 => {
+                let f: JitFunc1 = unsafe { std::mem::transmute(jit_ptr) };
+                let arg0 = match self.context.locals.get(0) {
+                    Value::Int(v) => *v,
+                    _ => return Err("Expected Int argument for JIT".to_string()),
+                };
+                f(arg0)
+            }
+            2 => {
+                let f: JitFunc2 = unsafe { std::mem::transmute(jit_ptr) };
+                let arg0 = match self.context.locals.get(0) {
+                    Value::Int(v) => *v,
+                    _ => return Err("Expected Int argument for JIT".to_string()),
+                };
+                let arg1 = match self.context.locals.get(1) {
+                    Value::Int(v) => *v,
+                    _ => return Err("Expected Int argument for JIT".to_string()),
+                };
+                f(arg0, arg1)
+            }
+            _ => return Err(format!("JIT execution only supports up to 2 arguments in this POC, got {}", func.params.len())),
+        };
+
+        Ok(Value::Int(res))
+    }
+    
+    fn execute_function_internal(&mut self, func: Arc<SpecializedFunction>) -> Result<Value, String> {
+        let func_name = &func.name;
         let mut block_idx = 0;
         let mut instr_idx = 0;
         
@@ -579,7 +655,7 @@ impl OptimizedVM {
             match &instr.opcode {
                 SpecializedOpcode::TailCall(callee_name, arg_count) => {
                     // Tail call optimization: reuse current frame
-                    let mut args = Vec::new();
+                    let mut args = Vec::with_capacity(*arg_count);
                     for _ in 0..*arg_count {
                         args.push(self.context.pop().ok_or("Stack underflow in TailCall")?);
                     }
@@ -599,8 +675,42 @@ impl OptimizedVM {
                         continue;
                     } else {
                         // Tail call to different function
-                        return self.execute_function(callee_name);
+                        let target = self.functions.get(callee_name)
+                            .ok_or_else(|| format!("Function {} not found", callee_name))?
+                            .clone();
+                        return self.execute_function_internal(target);
                     }
+                }
+                
+                SpecializedOpcode::CallFast(callee_name, arg_count, site_id) => {
+                    let mut args = Vec::with_capacity(*arg_count);
+                    for _ in 0..*arg_count {
+                        args.push(self.context.pop().ok_or("Stack underflow in CallFast")?);
+                    }
+                    args.reverse();
+                    
+                    let saved_locals = std::mem::replace(
+                        &mut self.context.locals,
+                        FastLocals::new(args.len())
+                    );
+                    for (idx, arg) in args.into_iter().enumerate() {
+                        self.context.locals.set(idx, arg);
+                    }
+                    
+                    // Inline cache lookup
+                    let target = if let Some(cached) = self.context.inline_cache.get_cached_function(*site_id) {
+                        cached.clone()
+                    } else {
+                        let f = self.functions.get(callee_name)
+                            .ok_or_else(|| format!("Function {} not found", callee_name))?
+                            .clone();
+                        self.context.inline_cache.cache_function(*site_id, f.clone());
+                        f
+                    };
+                    
+                    let result = self.execute_function_internal(target)?;
+                    self.context.locals = saved_locals;
+                    self.context.push(result);
                 }
                 
                 SpecializedOpcode::Generic(opcode) => {
@@ -625,7 +735,7 @@ impl OptimizedVM {
                             }
                         }
                         crate::ir::Opcode::Call(callee_name, arg_count) => {
-                            let mut args = Vec::new();
+                            let mut args = Vec::with_capacity(*arg_count);
                             for _ in 0..*arg_count {
                                 args.push(self.context.pop().ok_or("Stack underflow in Call")?);
                             }
@@ -643,7 +753,10 @@ impl OptimizedVM {
                             }
                             
                             // Execute callee
-                            let result = self.execute_function(callee_name)?;
+                            let target = self.functions.get(callee_name)
+                                .ok_or_else(|| format!("Function {} not found", callee_name))?
+                                .clone();
+                            let result = self.execute_function_internal(target)?;
                             
                             // Restore locals
                             self.context.locals = saved_locals;
