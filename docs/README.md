@@ -30,8 +30,11 @@ groklang/
     │   ├── Phase-3-5-Summary.md
     │   └── Implementation-Roadmap.md
     │
-    └── Validation/                 ← Quality assurance
-        └── Master-Validation-Checklist.md
+    ├── Validation/                 ← Quality assurance
+    │   └── Master-Validation-Checklist.md
+    │
+    ├── User-Guide.md               ← End-user documentation
+    └── AI-Features-Demo.md         ← Real-world AI usage report
 ```
 
 ---
@@ -396,6 +399,8 @@ Support Documents:
 
 - [x] ARCHITECTURAL-DECISIONS.md
 - [x] Master-Validation-Checklist.md
+- [x] User-Guide.md
+- [x] AI-Features-Demo.md
 - [x] This summary document
 
 **Total**: 13 comprehensive documents

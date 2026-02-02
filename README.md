@@ -364,6 +364,7 @@ This project includes comprehensive documentation ready for production implement
 ### Getting Started
 
 - **[User-Guide.md](docs/User-Guide.md)** — Complete user guide with installation, examples, and tutorials
+- **[AI-Features-Demo.md](docs/AI-Features-Demo.md)** — Demonstration of AI capabilities using DeepSeek
 - **[ARCHITECTURAL-DECISIONS.md](ARCHITECTURAL-DECISIONS.md)** — Key design decisions and rationale
 - **[IMPLEMENTATION-PACKAGE.md](IMPLEMENTATION-PACKAGE.md)** — Overview of complete development package
 
