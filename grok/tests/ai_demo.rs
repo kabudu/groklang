@@ -4,7 +4,7 @@ mod ai_demo_tests {
     use std::time::Instant;
 
     /// Comprehensive AI features demonstration
-    /// 
+    ///
     /// This test demonstrates all AI capabilities of GrokLang:
     /// 1. Multiple providers (Mock, OpenAI, DeepSeek)
     /// 2. All AI operations
@@ -67,13 +67,19 @@ fn main() {
         for (name, op) in operations {
             println!(">>> Running: {} <<<", name);
             let start = Instant::now();
-            
+
             match service.process(op.clone(), sample_code).await {
                 Ok(result) => {
                     let elapsed = start.elapsed();
                     println!("✓ Success ({:.2}ms)", elapsed.as_secs_f64() * 1000.0);
-                    println!("Output preview: {}...", 
-                        result.chars().take(200).collect::<String>().replace('\n', " "));
+                    println!(
+                        "Output preview: {}...",
+                        result
+                            .chars()
+                            .take(200)
+                            .collect::<String>()
+                            .replace('\n', " ")
+                    );
                     println!();
                 }
                 Err(e) => {
@@ -88,7 +94,10 @@ fn main() {
         let start = Instant::now();
         let _ = service.process(AiOperation::Explain, sample_code).await;
         let cached_time = start.elapsed();
-        println!("Cached call time: {:.3}ms", cached_time.as_secs_f64() * 1000.0);
+        println!(
+            "Cached call time: {:.3}ms",
+            cached_time.as_secs_f64() * 1000.0
+        );
 
         // Print trace report
         println!("\n{}", service.get_trace_report());
@@ -110,7 +119,7 @@ fn main() {
 
         // Security check on AI output
         let service_check = AiService::with_config(AiConfig::mock());
-        
+
         let test_cases = vec![
             ("Normal code", "let x = 42", true),
             ("Eval injection", "eval('malicious')", false),
@@ -122,9 +131,15 @@ fn main() {
         println!("\nSecurity Pattern Detection:");
         for (name, code, should_be_safe) in test_cases {
             let is_safe = service_check.is_safe(code);
-            let status = if is_safe == should_be_safe { "✓" } else { "✗" };
-            println!("  {} {}: {} (expected: {})", 
-                status, name, 
+            let status = if is_safe == should_be_safe {
+                "✓"
+            } else {
+                "✗"
+            };
+            println!(
+                "  {} {}: {} (expected: {})",
+                status,
+                name,
                 if is_safe { "safe" } else { "blocked" },
                 if should_be_safe { "safe" } else { "blocked" }
             );
@@ -142,8 +157,13 @@ fn main() {
 
         let code_samples = vec![
             ("Small", "fn f(x) { x + 1 }"),
-            ("Medium", "fn factorial(n) { if n <= 1 { 1 } else { n * factorial(n-1) } }"),
-            ("Large", r#"
+            (
+                "Medium",
+                "fn factorial(n) { if n <= 1 { 1 } else { n * factorial(n-1) } }",
+            ),
+            (
+                "Large",
+                r#"
                 struct Point { x: i32, y: i32 }
                 fn distance(p1: Point, p2: Point) -> f64 {
                     let dx = p2.x - p1.x
@@ -156,45 +176,53 @@ fn main() {
                     let d = distance(a, b)
                     print(d)
                 }
-            "#),
+            "#,
+            ),
         ];
 
         println!("Operation Latency by Code Size:\n");
-        
+
         for (size_name, code) in &code_samples {
             let iterations = 10;
             let mut total_time = std::time::Duration::ZERO;
-            
+
             for _ in 0..iterations {
                 service.clear_cache();
                 let start = Instant::now();
                 let _ = service.process(AiOperation::Optimize, code).await;
                 total_time += start.elapsed();
             }
-            
+
             let avg_ms = total_time.as_secs_f64() * 1000.0 / iterations as f64;
-            println!("  {} code ({} chars): {:.3}ms avg", 
-                size_name, code.len(), avg_ms);
+            println!(
+                "  {} code ({} chars): {:.3}ms avg",
+                size_name,
+                code.len(),
+                avg_ms
+            );
         }
 
         println!("\nCache Performance:\n");
-        
+
         let code = "fn test() { 42 }";
-        
+
         // Uncached
         service.clear_cache();
         let start = Instant::now();
         let _ = service.process(AiOperation::Explain, code).await;
         let uncached = start.elapsed();
-        
+
         // Cached
         let start = Instant::now();
         let _ = service.process(AiOperation::Explain, code).await;
         let cached = start.elapsed();
-        
+
         println!("  Uncached: {:.3}ms", uncached.as_secs_f64() * 1000.0);
         println!("  Cached:   {:.3}ms", cached.as_secs_f64() * 1000.0);
-        println!("  Speedup:  {:.1}x", uncached.as_secs_f64() / cached.as_secs_f64());
+        println!(
+            "  Speedup:  {:.1}x",
+            uncached.as_secs_f64() / cached.as_secs_f64()
+        );
 
         println!("\n{}", service.get_trace_summary());
     }

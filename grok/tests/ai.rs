@@ -5,7 +5,9 @@ mod tests {
     #[tokio::test]
     async fn test_ai_service() {
         let mut service = AiService::with_config(AiConfig::mock());
-        let result = service.process(AiOperation::Optimize, "fn add(a, b) { a + b }").await;
+        let result = service
+            .process(AiOperation::Optimize, "fn add(a, b) { a + b }")
+            .await;
         assert!(result.is_ok());
         assert!(result.unwrap().contains("Optimized"));
     }

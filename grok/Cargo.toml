@@ -5,7 +5,11 @@ edition = "2021"
 
 [lib]
 name = "grok"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
+
+[features]
+default = []
+python-ffi = ["dep:pyo3"]
 
 [dependencies]
 logos = "0.14"
@@ -29,6 +33,6 @@ cranelift-module = "0.111.0"
 cranelift-jit = "0.111.0"
 cranelift-native = "0.111.0"
 target-lexicon = "0.12"
-pyo3 = { version = "0.27.2", features = ["extension-module"] }
+pyo3 = { version = "0.27.2", features = ["extension-module"], optional = true }
 bindgen = "0.72.1"
 # pyo3 = "0.21"  # Requires Python dev headers

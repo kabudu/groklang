@@ -3,12 +3,13 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while, take_while1},
     character::complete::{char, digit1},
-    combinator::{map, opt, value},
-    multi::{many0, separated_list0},
+    combinator::{map, not, opt, value},
+    multi::{many0, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
 use nom_locate::LocatedSpan;
+use std::fmt;
 
 type Input<'a> = LocatedSpan<&'a str>;
 
@@ -22,16 +23,49 @@ fn span_from(input: Input) -> Span {
 #[derive(Debug)]
 pub struct Parser;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseError {
+    pub message: String,
+    pub line: usize,
+    pub col: usize,
+    pub offset: usize,
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} (line {}, col {}, offset {})",
+            self.message, self.line, self.col, self.offset
+        )
+    }
+}
+
 impl Parser {
     pub fn new() -> Self {
         Self
     }
 
     pub fn parse(&self, input: &str) -> Result<AstNode, String> {
+        self.parse_detailed(input).map_err(|e| e.to_string())
+    }
+
+    pub fn parse_detailed(&self, input: &str) -> Result<AstNode, ParseError> {
         let input = LocatedSpan::new(input);
         match nom::combinator::all_consuming(program)(input) {
             Ok((_, ast)) => Ok(ast),
-            Err(e) => Err(format!("Parse error: {:?}", e)),
+            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(ParseError {
+                message: "Parse error".to_string(),
+                line: e.input.location_line() as usize,
+                col: e.input.get_column(),
+                offset: e.input.location_offset(),
+            }),
+            Err(nom::Err::Incomplete(_)) => Err(ParseError {
+                message: "Parse error: incomplete input".to_string(),
+                line: 0,
+                col: 0,
+                offset: 0,
+            }),
         }
     }
 }
@@ -61,9 +95,76 @@ fn skip_ws_and_comments(input: Input) -> IResult<Input, ()> {
 }
 
 fn identifier(input: Input) -> IResult<Input, String> {
+    let (input, first) = take_while1(|c: char| c.is_alphabetic() || c == '_')(input)?;
+    let (input, rest) = take_while(|c: char| c.is_alphanumeric() || c == '_')(input)?;
+    Ok((input, format!("{}{}", first.fragment(), rest.fragment())))
+}
+
+fn float_literal(input: Input) -> IResult<Input, f64> {
     map(
-        take_while1(|c: char| c.is_alphabetic() || c == '_'),
+        tuple((digit1, char('.'), digit1)),
+        |(int_part, _, frac_part): (Input, char, Input)| {
+            format!("{}.{}", int_part.fragment(), frac_part.fragment())
+                .parse()
+                .unwrap()
+        },
+    )(input)
+}
+
+fn int_literal(input: Input) -> IResult<Input, i64> {
+    alt((
+        map(
+            preceded(tag("0x"), take_while1(|c: char| c.is_ascii_hexdigit())),
+            |n: Input| i64::from_str_radix(n.fragment(), 16).unwrap(),
+        ),
+        map(
+            preceded(tag("0b"), take_while1(|c: char| c == '0' || c == '1')),
+            |n: Input| i64::from_str_radix(n.fragment(), 2).unwrap(),
+        ),
+        map(
+            preceded(tag("0o"), take_while1(|c: char| ('0'..='7').contains(&c))),
+            |n: Input| i64::from_str_radix(n.fragment(), 8).unwrap(),
+        ),
+        map(digit1, |n: Input| n.parse().unwrap()),
+    ))(input)
+}
+
+fn string_literal(input: Input) -> IResult<Input, String> {
+    map(
+        delimited(
+            char('"'),
+            take_while(|c: char| c != '"' && c != '\n'),
+            char('"'),
+        ),
         |s: Input| s.to_string(),
+    )(input)
+}
+
+fn raw_string_literal(input: Input) -> IResult<Input, String> {
+    map(
+        preceded(
+            tag("r"),
+            delimited(
+                char('"'),
+                take_while(|c: char| c != '"' && c != '\n'),
+                char('"'),
+            ),
+        ),
+        |s: Input| s.to_string(),
+    )(input)
+}
+
+fn byte_string_literal(input: Input) -> IResult<Input, Vec<u8>> {
+    map(
+        preceded(
+            char('b'),
+            delimited(
+                char('"'),
+                take_while(|c: char| c != '"' && c != '\n'),
+                char('"'),
+            ),
+        ),
+        |s: Input| s.fragment().as_bytes().to_vec(),
     )(input)
 }
 
@@ -77,6 +178,7 @@ fn declaration(input: Input) -> IResult<Input, AstNode> {
         struct_def,
         enum_def,
         trait_def,
+        impl_def,
         actor_def,
         macro_rules_def,
         map(statement, |s| s),
@@ -122,10 +224,10 @@ fn function_def(input: Input) -> IResult<Input, AstNode> {
             tag("fn"),
             ws(identifier),
             delimited(char('('), separated_list0(char(','), ws(param)), char(')')),
-            opt(preceded(ws(tag("->")), alt((
-                map(ws(tag("()")), |_| Type::Primitive("()".to_string())),
-                ws(type_annotation)
-            )))),
+            opt(preceded(
+                ws(tag("->")),
+                alt((map(ws(tag("()")), |_| Type::Unit), ws(type_annotation))),
+            )),
             ws(block),
         )),
         move |(_, name, params, ret_type, body)| AstNode::FunctionDef {
@@ -196,13 +298,46 @@ fn trait_def(input: Input) -> IResult<Input, AstNode> {
         tuple((
             tag("trait"),
             ws(identifier),
+            opt(preceded(
+                ws(char(':')),
+                separated_list1(ws(char('+')), ws(identifier)),
+            )),
             delimited(char('{'), many0(ws(function_def)), char('}')),
         )),
-        move |(_, name, methods)| AstNode::TraitDef {
+        move |(_, name, bounds, methods)| AstNode::TraitDef {
             name,
             methods,
-            bounds: vec![],
+            bounds: bounds.unwrap_or_default(),
             span: start_span.clone(),
+        },
+    )(input)
+}
+
+fn impl_def(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    map(
+        tuple((
+            tag("impl"),
+            ws(identifier),
+            opt(preceded(ws(tag("for")), ws(identifier))),
+            delimited(char('{'), many0(ws(function_def)), char('}')),
+        )),
+        move |(_, first, maybe_for_type, methods)| {
+            if let Some(for_type) = maybe_for_type {
+                AstNode::ImplBlock {
+                    trait_name: Some(first),
+                    for_type,
+                    methods,
+                    span: start_span.clone(),
+                }
+            } else {
+                AstNode::ImplBlock {
+                    trait_name: None,
+                    for_type: first,
+                    methods,
+                    span: start_span.clone(),
+                }
+            }
         },
     )(input)
 }
@@ -322,33 +457,232 @@ fn for_loop(input: Input) -> IResult<Input, AstNode> {
 }
 
 fn expression(input: Input) -> IResult<Input, AstNode> {
-    alt((
-        if_expr,
-        match_expr,
-        receive_expr,
-        spawn_expr,
-        binary_expr,
-        unary_expr,
-        postfix_expr,
-    ))(input)
+    assignment_expr(input)
 }
 
-fn unary_expr(input: Input) -> IResult<Input, AstNode> {
+fn assignment_expr(input: Input) -> IResult<Input, AstNode> {
     let start_span = span_from(input);
-    alt((
-        map(
-            tuple((
-                ws(alt((tag("&mut"), tag("&"), tag("*"), tag("!"), tag("-")))),
-                expression,
-            )),
-            move |(op, expr)| AstNode::UnaryOp {
+    let (input, left) = send_expr(input)?;
+    if let Ok((input, op)) = ws(alt((
+        tag("="),
+        tag("+="),
+        tag("-="),
+        tag("*="),
+        tag("/="),
+        tag("%="),
+        tag("&="),
+        tag("|="),
+        tag("^="),
+        tag("<<="),
+        tag(">>="),
+    )))(input)
+    {
+        let (input, right) = assignment_expr(input)?;
+        Ok((
+            input,
+            AstNode::BinaryOp {
+                left: Box::new(left),
                 op: op.to_string(),
-                operand: Box::new(expr),
+                right: Box::new(right),
+                span: start_span,
+            },
+        ))
+    } else {
+        Ok((input, left))
+    }
+}
+
+fn send_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (input, left) = logical_or_expr(input)?;
+    if let Ok((input, _)) = ws(tag("!"))(input) {
+        let (input, right) = expression(input)?;
+        Ok((
+            input,
+            AstNode::Send {
+                target: Box::new(left),
+                message: Box::new(right),
                 span: start_span.clone(),
             },
-        ),
-        postfix_expr,
-    ))(input)
+        ))
+    } else {
+        Ok((input, left))
+    }
+}
+
+fn logical_or_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = logical_and_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(tag("||"))(input) {
+        let (i_rhs, right) = logical_and_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn logical_and_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = bitwise_or_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(tag("&&"))(input) {
+        let (i_rhs, right) = bitwise_or_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn bitwise_or_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = bitwise_xor_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(terminated(tag("|"), not(alt((tag("|"), tag("="))))))(input)
+    {
+        let (i_rhs, right) = bitwise_xor_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn bitwise_xor_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = bitwise_and_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(terminated(tag("^"), not(tag("="))))(input) {
+        let (i_rhs, right) = bitwise_and_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn bitwise_and_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = equality_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(terminated(tag("&"), not(alt((tag("&"), tag("="))))))(input)
+    {
+        let (i_rhs, right) = equality_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn equality_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = relational_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(alt((tag("=="), tag("!="))))(input) {
+        let (i_rhs, right) = relational_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn relational_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = shift_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(alt((tag("<="), tag(">="), tag("<"), tag(">"))))(input) {
+        let (i_rhs, right) = shift_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn shift_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = additive_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(alt((
+        terminated(tag("<<"), not(tag("="))),
+        terminated(tag(">>"), not(tag("="))),
+    )))(input)
+    {
+        let (i_rhs, right) = additive_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn additive_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = multiplicative_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(alt((
+        terminated(tag("+"), not(tag("="))),
+        terminated(tag("-"), not(tag("="))),
+    )))(input)
+    {
+        let (i_rhs, right) = multiplicative_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
+}
+
+fn multiplicative_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    let (mut input, mut left) = unary_expr(input)?;
+    while let Ok((i_op, op_span)) = ws(alt((
+        terminated(tag("*"), not(tag("="))),
+        terminated(tag("/"), not(tag("="))),
+        terminated(tag("%"), not(tag("="))),
+    )))(input)
+    {
+        let (i_rhs, right) = unary_expr(i_op)?;
+        left = AstNode::BinaryOp {
+            left: Box::new(left),
+            op: op_span.to_string(),
+            right: Box::new(right),
+            span: start_span.clone(),
+        };
+        input = i_rhs;
+    }
+    Ok((input, left))
 }
 
 fn if_expr(input: Input) -> IResult<Input, AstNode> {
@@ -440,49 +774,108 @@ fn match_arm(input: Input) -> IResult<Input, MatchArm> {
 }
 
 fn pattern(input: Input) -> IResult<Input, Pattern> {
+    let (mut input, first) = simple_pattern(input)?;
+    let mut patterns = vec![first];
+    while let Ok((i, _)) = ws(tag("|"))(input) {
+        let (i2, pat) = simple_pattern(i)?;
+        patterns.push(pat);
+        input = i2;
+    }
+
+    if patterns.len() == 1 {
+        Ok((input, patterns.pop().unwrap()))
+    } else {
+        Ok((input, Pattern::Or(patterns)))
+    }
+}
+
+fn simple_pattern(input: Input) -> IResult<Input, Pattern> {
     alt((
+        enum_pattern,
+        struct_pattern,
+        tuple_pattern,
         map(ws(tag("_")), |_| Pattern::Underscore),
         map(ws(tag("true")), |_| Pattern::BoolLiteral(true)),
         map(ws(tag("false")), |_| Pattern::BoolLiteral(false)),
-        map(digit1, |n: Input| Pattern::IntLiteral(n.parse().unwrap())),
+        map(float_literal, Pattern::FloatLiteral),
+        map(string_literal, Pattern::StringLiteral),
+        map(int_literal, Pattern::IntLiteral),
         map(identifier, |id| Pattern::Identifier(id)),
     ))(input)
 }
 
-fn binary_expr(input: Input) -> IResult<Input, AstNode> {
-    let start_span = span_from(input);
+fn tuple_pattern(input: Input) -> IResult<Input, Pattern> {
     map(
         tuple((
-            postfix_expr,
-            ws(alt((
-                tag("+"),
-                tag("-"),
-                tag("*"),
-                tag("/"),
-                tag("=="),
-                tag("!="),
-                tag("!"),
-            ))),
-            expression,
+            ws(char('(')),
+            ws(pattern),
+            ws(char(',')),
+            separated_list0(ws(char(',')), ws(pattern)),
+            opt(ws(char(','))),
+            ws(char(')')),
         )),
-        move |(left, op_span, right)| {
-            let op = op_span.to_string();
-            if op == "!" {
-                AstNode::Send {
-                    target: Box::new(left),
-                    message: Box::new(right),
-                    span: start_span.clone(),
-                }
-            } else {
-                AstNode::BinaryOp {
-                    left: Box::new(left),
-                    op: op.to_string(),
-                    right: Box::new(right),
-                    span: start_span.clone(),
-                }
-            }
+        |(_, first, _, rest, _, _)| {
+            let mut items = vec![first];
+            items.extend(rest);
+            Pattern::Tuple(items)
         },
     )(input)
+}
+
+fn struct_pattern(input: Input) -> IResult<Input, Pattern> {
+    map(
+        tuple((
+            identifier,
+            delimited(
+                ws(char('{')),
+                separated_list0(
+                    ws(char(',')),
+                    pair(identifier, opt(preceded(ws(char(':')), ws(pattern)))),
+                ),
+                ws(char('}')),
+            ),
+        )),
+        |(name, fields)| {
+            let fields = fields
+                .into_iter()
+                .map(|(field, pat)| {
+                    let p = pat.unwrap_or_else(|| Pattern::Identifier(field.clone()));
+                    (field, p)
+                })
+                .collect();
+            Pattern::Struct(name, fields)
+        },
+    )(input)
+}
+
+fn enum_pattern(input: Input) -> IResult<Input, Pattern> {
+    map(
+        tuple((
+            identifier,
+            ws(tag("::")),
+            identifier,
+            opt(delimited(ws(char('(')), ws(pattern), ws(char(')')))),
+        )),
+        |(enum_name, _, variant, payload)| Pattern::Enum(enum_name, variant, payload.map(Box::new)),
+    )(input)
+}
+
+fn unary_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    alt((
+        map(
+            tuple((
+                ws(alt((tag("&mut"), tag("&"), tag("*"), tag("!"), tag("-")))),
+                unary_expr,
+            )),
+            move |(op, expr)| AstNode::UnaryOp {
+                op: op.to_string(),
+                operand: Box::new(expr),
+                span: start_span.clone(),
+            },
+        ),
+        postfix_expr,
+    ))(input)
 }
 
 fn postfix_expr(input: Input) -> IResult<Input, AstNode> {
@@ -524,8 +917,16 @@ fn primary_expr(input: Input) -> IResult<Input, AstNode> {
     let s2 = span.clone();
     let s3 = span.clone();
     let s4 = span.clone();
+    let s5 = span.clone();
+    let s6 = span.clone();
+    let s7 = span.clone();
+    let s8 = span.clone();
     alt((
         macro_call,
+        if_expr,
+        match_expr,
+        receive_expr,
+        spawn_expr,
         struct_literal,
         map(ws(tag("true")), move |_| {
             AstNode::BoolLiteral(true, s1.clone())
@@ -533,10 +934,18 @@ fn primary_expr(input: Input) -> IResult<Input, AstNode> {
         map(ws(tag("false")), move |_| {
             AstNode::BoolLiteral(false, s2.clone())
         }),
-        map(identifier, move |id| AstNode::Identifier(id, s3.clone())),
-        map(digit1, move |n: Input| {
-            AstNode::IntLiteral(n.parse().unwrap(), s4.clone())
+        map(float_literal, move |f| AstNode::FloatLiteral(f, s5.clone())),
+        map(string_literal, move |s| {
+            AstNode::StringLiteral(s, s6.clone())
         }),
+        map(raw_string_literal, move |s| {
+            AstNode::StringLiteral(s, s8.clone())
+        }),
+        map(byte_string_literal, move |b| {
+            AstNode::ByteStringLiteral(b, s7.clone())
+        }),
+        map(identifier, move |id| AstNode::Identifier(id, s3.clone())),
+        map(int_literal, move |n| AstNode::IntLiteral(n, s4.clone())),
         delimited(char('('), expression, char(')')),
     ))(input)
 }
@@ -597,8 +1006,28 @@ fn param(input: Input) -> IResult<Input, Param> {
 
 fn type_annotation(input: Input) -> IResult<Input, Type> {
     alt((
+        map(tag("()"), |_| Type::Unit),
+        map(tuple((tag("trait"), ws(identifier))), |(_, name)| {
+            Type::Trait(name)
+        }),
+        map(
+            tuple((tag("&"), opt(ws(tag("mut"))), ws(type_annotation))),
+            |(_, mutable, inner)| Type::Reference(Box::new(inner), mutable.is_some()),
+        ),
+        map(
+            tuple((
+                identifier,
+                delimited(
+                    ws(char('<')),
+                    separated_list0(ws(char(',')), ws(type_annotation)),
+                    ws(char('>')),
+                ),
+            )),
+            |(name, args)| Type::Generic(name, args),
+        ),
         map(tag("i32"), |_| Type::Primitive("i32".to_string())),
         map(tag("i64"), |_| Type::Primitive("i64".to_string())),
+        map(tag("f32"), |_| Type::Primitive("f32".to_string())),
         map(tag("f64"), |_| Type::Primitive("f64".to_string())),
         map(tag("bool"), |_| Type::Primitive("bool".to_string())),
         map(tag("String"), |_| Type::Primitive("String".to_string())),

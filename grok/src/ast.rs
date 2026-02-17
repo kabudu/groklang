@@ -35,6 +35,12 @@ pub enum AstNode {
         bounds: Vec<String>,
         span: Span,
     },
+    ImplBlock {
+        trait_name: Option<String>,
+        for_type: String,
+        methods: Vec<AstNode>,
+        span: Span,
+    },
     ActorDef {
         name: String,
         body: Box<AstNode>, // Block
@@ -161,6 +167,7 @@ pub enum Pattern {
     StringLiteral(String),
     BoolLiteral(bool),
     Underscore,
+    Or(Vec<Pattern>),
     Tuple(Vec<Pattern>),
     Struct(String, Vec<(String, Pattern)>),
     Enum(String, String, Option<Box<Pattern>>),

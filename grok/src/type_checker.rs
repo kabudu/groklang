@@ -1,6 +1,6 @@
 // grok/src/type_checker.rs
-use crate::ast::{AstNode, Type};
-use std::collections::HashMap;
+use crate::ast::{AstNode, MatchArm, Pattern, Type};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Constraint {
@@ -47,6 +47,16 @@ pub struct TypeChecker {
     constraints: Vec<Constraint>,
     type_var_counter: usize,
     global_types: HashMap<String, Type>,
+    struct_arities: HashMap<String, usize>,
+    enum_variants: HashMap<String, Vec<String>>,
+    trait_names: HashSet<String>,
+    trait_methods: HashMap<String, HashMap<String, MethodSignature>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct MethodSignature {
+    params: Vec<Option<Type>>,
+    return_type: Option<Type>,
 }
 
 impl TypeChecker {
@@ -55,6 +65,10 @@ impl TypeChecker {
             constraints: Vec::new(),
             type_var_counter: 0,
             global_types: HashMap::new(),
+            struct_arities: HashMap::new(),
+            enum_variants: HashMap::new(),
+            trait_names: HashSet::new(),
+            trait_methods: HashMap::new(),
         }
     }
 
@@ -67,10 +81,17 @@ impl TypeChecker {
     pub fn check(&mut self, ast: &AstNode) -> Result<HashMap<String, Type>, String> {
         self.constraints.clear();
         self.global_types.clear();
+        self.struct_arities.clear();
+        self.enum_variants.clear();
+        self.trait_names.clear();
+        self.trait_methods.clear();
         let mut env = TypeEnv::new();
 
         // Pass 1: Collect definitions
         self.collect_definitions(ast)?;
+
+        // Pass 1.5: Validate declared type annotations.
+        self.validate_type_annotations(ast)?;
 
         // Pass 2: Collect constraints
         self.collect(ast, &mut env)?;
@@ -91,10 +112,98 @@ impl TypeChecker {
             AstNode::StructDef { name, fields, .. } => {
                 let ty = Type::Struct(name.clone(), fields.clone());
                 self.global_types.insert(name.clone(), ty);
+                // Parser currently does not expose generic params for type defs.
+                self.struct_arities.insert(name.clone(), 0);
             }
-            AstNode::EnumDef { name, .. } => {
+            AstNode::EnumDef { name, variants, .. } => {
                 let ty = Type::Primitive(name.clone());
                 self.global_types.insert(name.clone(), ty);
+                self.enum_variants.insert(
+                    name.clone(),
+                    variants
+                        .iter()
+                        .map(|(variant, _)| variant.clone())
+                        .collect(),
+                );
+            }
+            AstNode::TraitDef { name, methods, .. } => {
+                if self.trait_names.contains(name) {
+                    return Err(format!("Duplicate trait definition: {}", name));
+                }
+                self.trait_names.insert(name.clone());
+                self.global_types
+                    .insert(name.clone(), Type::Trait(name.clone()));
+
+                let mut method_sigs = HashMap::new();
+                for method in methods {
+                    let (method_name, sig) = Self::method_signature(method)?;
+                    if method_sigs.insert(method_name.clone(), sig).is_some() {
+                        return Err(format!(
+                            "Duplicate method '{}' in trait '{}'",
+                            method_name, name
+                        ));
+                    }
+                }
+                self.trait_methods.insert(name.clone(), method_sigs);
+            }
+            AstNode::ImplBlock {
+                trait_name,
+                for_type,
+                methods,
+                ..
+            } => {
+                if !self.global_types.contains_key(for_type) {
+                    return Err(format!("Unknown type in impl block: {}", for_type));
+                }
+
+                let mut impl_method_sigs = HashMap::new();
+                for method in methods {
+                    let (method_name, sig) = Self::method_signature(method)?;
+                    if impl_method_sigs.insert(method_name.clone(), sig).is_some() {
+                        return Err(format!(
+                            "Duplicate method '{}' in impl for '{}'",
+                            method_name, for_type
+                        ));
+                    }
+                }
+
+                if let Some(trait_name) = trait_name {
+                    if !self.trait_names.contains(trait_name) {
+                        return Err(format!("Unknown trait in impl block: {}", trait_name));
+                    }
+                    if let Some(required) = self.trait_methods.get(trait_name) {
+                        let missing: Vec<String> = required
+                            .iter()
+                            .filter_map(|(method_name, _)| {
+                                if impl_method_sigs.contains_key(method_name) {
+                                    None
+                                } else {
+                                    Some(method_name.clone())
+                                }
+                            })
+                            .collect();
+                        if !missing.is_empty() {
+                            return Err(format!(
+                                "Impl of trait '{}' for '{}' is missing method(s): {}",
+                                trait_name,
+                                for_type,
+                                missing.join(", ")
+                            ));
+                        }
+
+                        for (method_name, trait_sig) in required {
+                            if let Some(impl_sig) = impl_method_sigs.get(method_name) {
+                                Self::validate_impl_method_signature(
+                                    trait_name,
+                                    for_type,
+                                    method_name,
+                                    trait_sig,
+                                    impl_sig,
+                                )?;
+                            }
+                        }
+                    }
+                }
             }
             AstNode::ActorDef { name, .. } => {
                 let ty = Type::Actor(name.clone());
@@ -108,9 +217,10 @@ impl TypeChecker {
             } => {
                 let p_tys = params
                     .iter()
-                    .map(|p| {
+                    .enumerate()
+                    .map(|(idx, p)| {
                         p.ty.clone()
-                            .unwrap_or_else(|| Type::Variable(format!("{}_p", name)))
+                            .unwrap_or_else(|| Type::Variable(format!("{}_p{}", name, idx)))
                     })
                     .collect();
                 let r_ty = return_type.clone().unwrap_or(Type::Unit);
@@ -120,6 +230,289 @@ impl TypeChecker {
             _ => {}
         }
         Ok(())
+    }
+
+    fn validate_type_annotations(&self, ast: &AstNode) -> Result<(), String> {
+        match ast {
+            AstNode::Program(nodes) | AstNode::Block(nodes) => {
+                for node in nodes {
+                    self.validate_type_annotations(node)?;
+                }
+            }
+            AstNode::FunctionDef {
+                params,
+                return_type,
+                body,
+                ..
+            } => {
+                for p in params {
+                    if let Some(ty) = &p.ty {
+                        self.validate_type(ty)?;
+                    }
+                }
+                if let Some(ret) = return_type {
+                    self.validate_type(ret)?;
+                }
+                self.validate_type_annotations(body)?;
+            }
+            AstNode::StructDef { fields, .. } => {
+                for (_, ty) in fields {
+                    self.validate_type(ty)?;
+                }
+            }
+            AstNode::EnumDef { variants, .. } => {
+                for (_, payload_ty) in variants {
+                    if let Some(ty) = payload_ty {
+                        self.validate_type(ty)?;
+                    }
+                }
+            }
+            AstNode::TraitDef {
+                name,
+                bounds,
+                methods,
+                ..
+            } => {
+                for bound in bounds {
+                    if bound == name {
+                        return Err(format!("Trait '{}' cannot bound itself", name));
+                    }
+                    if !self.trait_names.contains(bound) {
+                        return Err(format!(
+                            "Unknown trait bound '{}' on trait '{}'",
+                            bound, name
+                        ));
+                    }
+                }
+                for method in methods {
+                    self.validate_type_annotations(method)?;
+                }
+            }
+            AstNode::ImplBlock { methods, .. } => {
+                for method in methods {
+                    self.validate_type_annotations(method)?;
+                }
+            }
+            AstNode::LetStmt { ty, expr, .. } => {
+                if let Some(ty) = ty {
+                    self.validate_type(ty)?;
+                }
+                self.validate_type_annotations(expr)?;
+            }
+            AstNode::IfExpr {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
+                self.validate_type_annotations(condition)?;
+                self.validate_type_annotations(then_body)?;
+                if let Some(else_body) = else_body {
+                    self.validate_type_annotations(else_body)?;
+                }
+            }
+            AstNode::WhileLoop {
+                condition, body, ..
+            } => {
+                self.validate_type_annotations(condition)?;
+                self.validate_type_annotations(body)?;
+            }
+            AstNode::ForLoop { iterable, body, .. } => {
+                self.validate_type_annotations(iterable)?;
+                self.validate_type_annotations(body)?;
+            }
+            AstNode::MatchExpr {
+                scrutinee, arms, ..
+            } => {
+                self.validate_type_annotations(scrutinee)?;
+                for arm in arms {
+                    if let Some(g) = &arm.guard {
+                        self.validate_type_annotations(g)?;
+                    }
+                    self.validate_type_annotations(&arm.body)?;
+                }
+            }
+            AstNode::FunctionCall { func, args, .. } => {
+                self.validate_type_annotations(func)?;
+                for arg in args {
+                    self.validate_type_annotations(arg)?;
+                }
+            }
+            AstNode::UnaryOp { operand, .. } => self.validate_type_annotations(operand)?,
+            AstNode::BinaryOp { left, right, .. } => {
+                self.validate_type_annotations(left)?;
+                self.validate_type_annotations(right)?;
+            }
+            AstNode::MemberAccess { object, .. } => self.validate_type_annotations(object)?,
+            AstNode::StructLiteral { fields, .. } => {
+                for (_, expr) in fields {
+                    self.validate_type_annotations(expr)?;
+                }
+            }
+            AstNode::Return { value, .. } => {
+                if let Some(v) = value {
+                    self.validate_type_annotations(v)?;
+                }
+            }
+            AstNode::Spawn { args, .. } => {
+                for (_, expr) in args {
+                    self.validate_type_annotations(expr)?;
+                }
+            }
+            AstNode::Send {
+                target, message, ..
+            } => {
+                self.validate_type_annotations(target)?;
+                self.validate_type_annotations(message)?;
+            }
+            AstNode::Receive { arms, .. } => {
+                for arm in arms {
+                    if let Some(g) = &arm.guard {
+                        self.validate_type_annotations(g)?;
+                    }
+                    self.validate_type_annotations(&arm.body)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn builtin_generic_arity(name: &str) -> Option<usize> {
+        match name {
+            "Vec" | "Option" | "HashSet" => Some(1),
+            "Result" | "HashMap" => Some(2),
+            _ => None,
+        }
+    }
+
+    fn method_signature(method: &AstNode) -> Result<(String, MethodSignature), String> {
+        match method {
+            AstNode::FunctionDef {
+                name,
+                params,
+                return_type,
+                ..
+            } => Ok((
+                name.clone(),
+                MethodSignature {
+                    params: params.iter().map(|p| p.ty.clone()).collect(),
+                    return_type: return_type.clone(),
+                },
+            )),
+            _ => Err("Impl/trait methods must be function definitions".to_string()),
+        }
+    }
+
+    fn validate_impl_method_signature(
+        trait_name: &str,
+        for_type: &str,
+        method_name: &str,
+        trait_sig: &MethodSignature,
+        impl_sig: &MethodSignature,
+    ) -> Result<(), String> {
+        if trait_sig.params.len() != impl_sig.params.len() {
+            return Err(format!(
+                "Impl method '{}' for trait '{}' on '{}' has wrong arity: expected {}, got {}",
+                method_name,
+                trait_name,
+                for_type,
+                trait_sig.params.len(),
+                impl_sig.params.len()
+            ));
+        }
+
+        for (idx, (trait_param, impl_param)) in trait_sig
+            .params
+            .iter()
+            .zip(impl_sig.params.iter())
+            .enumerate()
+        {
+            if let Some(expected) = trait_param {
+                if impl_param.as_ref() != Some(expected) {
+                    return Err(format!(
+                        "Impl method '{}' for trait '{}' on '{}' has incompatible type for parameter {}: expected {:?}, got {:?}",
+                        method_name,
+                        trait_name,
+                        for_type,
+                        idx + 1,
+                        expected,
+                        impl_param
+                    ));
+                }
+            }
+        }
+
+        if let Some(expected_ret) = &trait_sig.return_type {
+            if impl_sig.return_type.as_ref() != Some(expected_ret) {
+                return Err(format!(
+                    "Impl method '{}' for trait '{}' on '{}' has incompatible return type: expected {:?}, got {:?}",
+                    method_name, trait_name, for_type, expected_ret, impl_sig.return_type
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_type(&self, ty: &Type) -> Result<(), String> {
+        match ty {
+            Type::Primitive(_) | Type::Variable(_) | Type::Unit | Type::Actor(_) => Ok(()),
+            Type::Trait(name) => {
+                if self.trait_names.contains(name) {
+                    Ok(())
+                } else {
+                    Err(format!("Unknown trait type: {}", name))
+                }
+            }
+            Type::Reference(inner, _) => self.validate_type(inner),
+            Type::Function(params, ret) => {
+                for p in params {
+                    self.validate_type(p)?;
+                }
+                self.validate_type(ret)
+            }
+            Type::Struct(name, fields) => {
+                if !self.global_types.contains_key(name) {
+                    return Err(format!("Unknown struct type: {}", name));
+                }
+                for (_, field_ty) in fields {
+                    self.validate_type(field_ty)?;
+                }
+                Ok(())
+            }
+            Type::Generic(name, args) => {
+                for arg in args {
+                    self.validate_type(arg)?;
+                }
+
+                if let Some(expected) = Self::builtin_generic_arity(name) {
+                    if args.len() != expected {
+                        return Err(format!(
+                            "Generic type {} expects {} argument(s), got {}",
+                            name,
+                            expected,
+                            args.len()
+                        ));
+                    }
+                    return Ok(());
+                }
+
+                if let Some(expected) = self.struct_arities.get(name) {
+                    if args.len() != *expected {
+                        return Err(format!(
+                            "Generic type {} expects {} argument(s), got {}",
+                            name,
+                            expected,
+                            args.len()
+                        ));
+                    }
+                    return Ok(());
+                }
+
+                Err(format!("Unknown generic type constructor: {}", name))
+            }
+        }
     }
 
     fn collect(&mut self, ast: &AstNode, env: &mut TypeEnv) -> Result<Type, String> {
@@ -195,10 +588,15 @@ impl TypeChecker {
             AstNode::FloatLiteral(_, _) => Ok(Type::Primitive("f64".to_string())),
             AstNode::StringLiteral(_, _) => Ok(Type::Primitive("str".to_string())),
             AstNode::BoolLiteral(_, _) => Ok(Type::Primitive("bool".to_string())),
-            AstNode::Identifier(name, _) => env
+            AstNode::Identifier(name, span) => env
                 .lookup(name)
                 .or_else(|| self.global_types.get(name).cloned())
-                .ok_or_else(|| format!("Undefined variable: {}", name)),
+                .ok_or_else(|| {
+                    format!(
+                        "Undefined variable '{}' at line {} col {}",
+                        name, span.line, span.col
+                    )
+                }),
             AstNode::FunctionCall { func, args, .. } => {
                 let f_ty = self.collect(func, env)?;
                 let res_ty = self.fresh_type_var();
@@ -224,12 +622,42 @@ impl TypeChecker {
                         right: r_ty,
                     });
                     Ok(l_ty)
+                } else if ["%", "&", "|", "^", "<<", ">>"].contains(&op.as_str()) {
+                    self.constraints.push(Constraint {
+                        left: l_ty.clone(),
+                        right: r_ty,
+                    });
+                    Ok(l_ty)
+                } else if ["&&", "||"].contains(&op.as_str()) {
+                    self.constraints.push(Constraint {
+                        left: l_ty,
+                        right: Type::Primitive("bool".to_string()),
+                    });
+                    self.constraints.push(Constraint {
+                        left: r_ty,
+                        right: Type::Primitive("bool".to_string()),
+                    });
+                    Ok(Type::Primitive("bool".to_string()))
                 } else if ["==", "!=", "<", ">", "<=", ">="].contains(&op.as_str()) {
                     self.constraints.push(Constraint {
                         left: l_ty,
                         right: r_ty,
                     });
                     Ok(Type::Primitive("bool".to_string()))
+                } else if ["="].contains(&op.as_str()) {
+                    self.constraints.push(Constraint {
+                        left: l_ty.clone(),
+                        right: r_ty,
+                    });
+                    Ok(l_ty)
+                } else if ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]
+                    .contains(&op.as_str())
+                {
+                    self.constraints.push(Constraint {
+                        left: l_ty.clone(),
+                        right: r_ty,
+                    });
+                    Ok(l_ty)
                 } else {
                     Ok(Type::Unit)
                 }
@@ -282,7 +710,7 @@ impl TypeChecker {
                         let g_ty = self.collect(guard, env)?;
                         self.constraints.push(Constraint {
                             left: g_ty,
-                            right: Type::Unit, // or bool
+                            right: Type::Primitive("bool".to_string()),
                         });
                     }
                     let b_ty = self.collect(&arm.body, env)?;
@@ -291,24 +719,42 @@ impl TypeChecker {
                         right: b_ty,
                     });
                 }
+                self.ensure_match_exhaustive(&s_ty, arms)?;
                 Ok(res_ty)
             }
-            AstNode::StructLiteral { name, fields, .. } => {
+            AstNode::StructLiteral {
+                name, fields, span, ..
+            } => {
                 let struct_def_ty = self
                     .global_types
                     .get(name)
-                    .ok_or_else(|| format!("Undefined struct: {}", name))?
+                    .ok_or_else(|| {
+                        format!(
+                            "Undefined struct '{}' at line {} col {}",
+                            name, span.line, span.col
+                        )
+                    })?
                     .clone();
 
                 if let Type::Struct(_, def_fields) = struct_def_ty {
+                    let mut provided = HashSet::new();
                     for (f_name, f_expr) in fields {
+                        if !provided.insert(f_name.clone()) {
+                            return Err(format!(
+                                "Duplicate field '{}' in struct literal '{}' at line {} col {}",
+                                f_name, name, span.line, span.col
+                            ));
+                        }
                         let f_expr_ty = self.collect(f_expr, env)?;
                         let def_f_ty = def_fields
                             .iter()
                             .find(|(n, _)| n == f_name)
                             .map(|(_, t)| t)
                             .ok_or_else(|| {
-                                format!("Unknown field {} in struct {}", f_name, name)
+                                format!(
+                                    "Unknown field '{}' in struct '{}' at line {} col {}",
+                                    f_name, name, span.line, span.col
+                                )
                             })?;
 
                         self.constraints.push(Constraint {
@@ -316,12 +762,40 @@ impl TypeChecker {
                             right: def_f_ty.clone(),
                         });
                     }
+
+                    let missing: Vec<String> = def_fields
+                        .iter()
+                        .filter_map(|(field_name, _)| {
+                            if provided.contains(field_name) {
+                                None
+                            } else {
+                                Some(field_name.clone())
+                            }
+                        })
+                        .collect();
+                    if !missing.is_empty() {
+                        return Err(format!(
+                            "Missing field(s) {} in struct literal '{}' at line {} col {}",
+                            missing.join(", "),
+                            name,
+                            span.line,
+                            span.col
+                        ));
+                    }
                     Ok(Type::Struct(name.clone(), def_fields))
                 } else {
-                    Err(format!("{} is not a struct", name))
+                    Err(format!(
+                        "'{}' is not a struct at line {} col {}",
+                        name, span.line, span.col
+                    ))
                 }
             }
-            AstNode::MemberAccess { object, member, .. } => {
+            AstNode::MemberAccess {
+                object,
+                member,
+                span,
+                ..
+            } => {
                 let obj_ty = self.collect(object, env)?;
                 match obj_ty {
                     Type::Struct(name, fields) => {
@@ -329,12 +803,17 @@ impl TypeChecker {
                             .iter()
                             .find(|(n, _)| n == member)
                             .map(|(_, t)| t.clone())
-                            .ok_or_else(|| format!("Struct {} has no member {}", name, member))?;
+                            .ok_or_else(|| {
+                                format!(
+                                    "Struct '{}' has no member '{}' at line {} col {}",
+                                    name, member, span.line, span.col
+                                )
+                            })?;
                         Ok(field_ty)
                     }
                     _ => Err(format!(
-                        "Cannot access member {} on non-struct type {:?}",
-                        member, obj_ty
+                        "Cannot access member '{}' on non-struct type {:?} at line {} col {}",
+                        member, obj_ty, span.line, span.col
                     )),
                 }
             }
@@ -343,9 +822,14 @@ impl TypeChecker {
                 self.global_types.insert(name.clone(), ty.clone());
                 Ok(ty)
             }
-            AstNode::Spawn { actor, args, .. } => {
+            AstNode::Spawn {
+                actor, args, span, ..
+            } => {
                 if !self.global_types.contains_key(actor) {
-                    return Err(format!("Undefined actor: {}", actor));
+                    return Err(format!(
+                        "Undefined actor '{}' at line {} col {}",
+                        actor, span.line, span.col
+                    ));
                 }
                 for (_, expr) in args {
                     self.collect(expr, env)?;
@@ -353,7 +837,10 @@ impl TypeChecker {
                 Ok(Type::Actor(actor.clone()))
             }
             AstNode::Send {
-                target, message, ..
+                target,
+                message,
+                span,
+                ..
             } => {
                 let t_ty = self.collect(target, env)?;
                 let _m_ty = self.collect(message, env)?;
@@ -361,7 +848,10 @@ impl TypeChecker {
                 match t_ty {
                     Type::Actor(_) => Ok(Type::Unit),
                     Type::Variable(_) => Ok(Type::Unit), // Optimistic
-                    _ => Err(format!("Send target must be an actor, got {:?}", t_ty)),
+                    _ => Err(format!(
+                        "Send target must be an actor, got {:?} at line {} col {}",
+                        t_ty, span.line, span.col
+                    )),
                 }
             }
             AstNode::Receive { arms, .. } => {
@@ -393,15 +883,140 @@ impl TypeChecker {
         env: &mut TypeEnv,
     ) -> Result<Type, String> {
         match pattern {
+            crate::ast::Pattern::Or(patterns) => {
+                if patterns.is_empty() {
+                    return Ok(self.fresh_type_var());
+                }
+                let first_ty = self.collect_pattern(&patterns[0], env)?;
+                for pat in &patterns[1..] {
+                    let ty = self.collect_pattern(pat, env)?;
+                    self.constraints.push(Constraint {
+                        left: first_ty.clone(),
+                        right: ty,
+                    });
+                }
+                Ok(first_ty)
+            }
             crate::ast::Pattern::Identifier(name) => {
                 let ty = self.fresh_type_var();
                 env.bind(name.clone(), ty.clone());
                 Ok(ty)
             }
             crate::ast::Pattern::IntLiteral(_) => Ok(Type::Primitive("i32".to_string())),
+            crate::ast::Pattern::FloatLiteral(_) => Ok(Type::Primitive("f64".to_string())),
+            crate::ast::Pattern::StringLiteral(_) => Ok(Type::Primitive("str".to_string())),
             crate::ast::Pattern::BoolLiteral(_) => Ok(Type::Primitive("bool".to_string())),
             crate::ast::Pattern::Underscore => Ok(self.fresh_type_var()),
-            _ => Ok(Type::Unit),
+            crate::ast::Pattern::Tuple(items) => {
+                for item in items {
+                    self.collect_pattern(item, env)?;
+                }
+                Ok(self.fresh_type_var())
+            }
+            crate::ast::Pattern::Struct(name, fields) => {
+                for (_, pat) in fields {
+                    self.collect_pattern(pat, env)?;
+                }
+                Ok(Type::Struct(name.clone(), vec![]))
+            }
+            crate::ast::Pattern::Enum(enum_name, _variant, payload) => {
+                if let Some(p) = payload {
+                    self.collect_pattern(p, env)?;
+                }
+                Ok(Type::Primitive(enum_name.clone()))
+            }
+        }
+    }
+
+    fn ensure_match_exhaustive(
+        &self,
+        scrutinee_ty: &Type,
+        arms: &[MatchArm],
+    ) -> Result<(), String> {
+        if scrutinee_ty == &Type::Primitive("bool".to_string()) {
+            let mut has_true = false;
+            let mut has_false = false;
+            let mut has_wildcard = false;
+
+            for arm in arms {
+                let (t, f, w) = Self::bool_pattern_coverage(&arm.pattern);
+                has_true |= t;
+                has_false |= f;
+                has_wildcard |= w;
+            }
+
+            if has_wildcard || (has_true && has_false) {
+                return Ok(());
+            }
+            return Err(
+                "Non-exhaustive match for bool: expected true and false branches (or _)"
+                    .to_string(),
+            );
+        }
+
+        if let Type::Primitive(enum_name) = scrutinee_ty {
+            if let Some(variants) = self.enum_variants.get(enum_name) {
+                let mut covered: HashMap<String, bool> =
+                    variants.iter().map(|v| (v.clone(), false)).collect();
+                let mut wildcard = false;
+                for arm in arms {
+                    for variant in Self::enum_covered_variants(enum_name, &arm.pattern) {
+                        covered.insert(variant, true);
+                    }
+                    if Self::pattern_has_wildcard(&arm.pattern) {
+                        wildcard = true;
+                    }
+                }
+
+                if wildcard || covered.values().all(|v| *v) {
+                    return Ok(());
+                }
+                let missing: Vec<String> = covered
+                    .iter()
+                    .filter_map(|(v, is_covered)| if !is_covered { Some(v.clone()) } else { None })
+                    .collect();
+                return Err(format!(
+                    "Non-exhaustive match for enum {}: missing variant(s): {}",
+                    enum_name,
+                    missing.join(", ")
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn bool_pattern_coverage(pattern: &Pattern) -> (bool, bool, bool) {
+        match pattern {
+            Pattern::BoolLiteral(true) => (true, false, false),
+            Pattern::BoolLiteral(false) => (false, true, false),
+            Pattern::Underscore | Pattern::Identifier(_) => (false, false, true),
+            Pattern::Or(patterns) => patterns.iter().fold((false, false, false), |acc, p| {
+                let (t, f, w) = Self::bool_pattern_coverage(p);
+                (acc.0 || t, acc.1 || f, acc.2 || w)
+            }),
+            _ => (false, false, false),
+        }
+    }
+
+    fn pattern_has_wildcard(pattern: &Pattern) -> bool {
+        match pattern {
+            Pattern::Underscore | Pattern::Identifier(_) => true,
+            Pattern::Or(patterns) => patterns.iter().any(Self::pattern_has_wildcard),
+            _ => false,
+        }
+    }
+
+    fn enum_covered_variants(enum_name: &str, pattern: &Pattern) -> Vec<String> {
+        match pattern {
+            Pattern::Enum(pattern_enum_name, variant, _) if pattern_enum_name == enum_name => {
+                vec![variant.clone()]
+            }
+            Pattern::Or(patterns) => patterns
+                .iter()
+                .flat_map(|p| Self::enum_covered_variants(enum_name, p))
+                .collect(),
+            _ => Vec::new(),
         }
     }
 

@@ -29,11 +29,15 @@ jobs:
         working-directory: grok
 
       - name: Clippy Linting
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
         working-directory: grok
 
       - name: Run Tests
-        run: cargo test --verbose
+        run: cargo test --verbose --no-default-features
+        working-directory: grok
+
+      - name: Feature Check (python-ffi)
+        run: cargo check --features python-ffi --no-default-features
         working-directory: grok
 
   build:
@@ -52,7 +56,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build Release
-        run: cargo build --release --verbose
+        run: cargo build --release --verbose --no-default-features
         working-directory: grok
         
       - name: Upload Binary

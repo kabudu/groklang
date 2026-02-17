@@ -53,7 +53,7 @@ impl AiConfig {
             max_tokens: 2048,
         }
     }
-    
+
     pub fn deepseek(api_key: String) -> Self {
         Self {
             provider: AiProvider::DeepSeek,
@@ -64,7 +64,7 @@ impl AiConfig {
             max_tokens: 4096,
         }
     }
-    
+
     pub fn mock() -> Self {
         Self {
             provider: AiProvider::Mock,
@@ -75,9 +75,9 @@ impl AiConfig {
             max_tokens: 0,
         }
     }
-    
+
     /// Load configuration from environment variables
-    /// 
+    ///
     /// Environment variables:
     /// - GROK_AI_PROVIDER: "openai", "deepseek", or "mock" (default: "mock")
     /// - GROK_AI_KEY: API key for the provider
@@ -87,9 +87,9 @@ impl AiConfig {
         let provider = std::env::var("GROK_AI_PROVIDER")
             .unwrap_or_else(|_| "mock".to_string())
             .to_lowercase();
-        
+
         let api_key = std::env::var("GROK_AI_KEY").ok();
-        
+
         let mut config = match provider.as_str() {
             "openai" => {
                 if let Some(key) = api_key {
@@ -109,17 +109,17 @@ impl AiConfig {
             }
             _ => Self::mock(),
         };
-        
+
         // Override model if specified
         if let Ok(model) = std::env::var("GROK_AI_MODEL") {
             config.model = model;
         }
-        
+
         // Override base URL if specified
         if let Ok(base_url) = std::env::var("GROK_AI_BASE_URL") {
             config.base_url = base_url;
         }
-        
+
         config
     }
 }
@@ -158,40 +158,40 @@ pub struct AiResponse {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AiOperation {
-    Optimize,           // Optimize code for performance
-    Explain,            // Explain what code does
-    Debug,              // Find bugs in code
-    Refactor,           // Refactor code for readability
-    GenerateTests,      // Generate test cases
-    SecurityAudit,      // Check for security issues
-    DocumentCode,       // Add documentation comments
-    TranslateCode,      // Translate between languages
-    Custom(String),     // Custom operation
+    Optimize,       // Optimize code for performance
+    Explain,        // Explain what code does
+    Debug,          // Find bugs in code
+    Refactor,       // Refactor code for readability
+    GenerateTests,  // Generate test cases
+    SecurityAudit,  // Check for security issues
+    DocumentCode,   // Add documentation comments
+    TranslateCode,  // Translate between languages
+    Custom(String), // Custom operation
 }
 
 impl AiOperation {
     pub fn system_prompt(&self) -> String {
         match self {
-            AiOperation::Optimize => 
+            AiOperation::Optimize =>
                 "You are GrokLang's AI optimizer. Analyze the code and provide an optimized version with performance improvements. Return only the optimized code.".to_string(),
-            AiOperation::Explain => 
+            AiOperation::Explain =>
                 "You are GrokLang's AI explainer. Explain what the following code does in clear, concise terms. Include the purpose, inputs, outputs, and key logic.".to_string(),
-            AiOperation::Debug => 
+            AiOperation::Debug =>
                 "You are GrokLang's AI debugger. Analyze the code for bugs, logical errors, and potential issues. Provide specific fixes with explanations.".to_string(),
-            AiOperation::Refactor => 
+            AiOperation::Refactor =>
                 "You are GrokLang's AI refactorer. Improve the code's readability, structure, and maintainability without changing its behavior. Return the refactored code.".to_string(),
-            AiOperation::GenerateTests => 
+            AiOperation::GenerateTests =>
                 "You are GrokLang's AI test generator. Create comprehensive test cases for the given code, covering edge cases and typical usage scenarios.".to_string(),
-            AiOperation::SecurityAudit => 
+            AiOperation::SecurityAudit =>
                 "You are GrokLang's AI security auditor. Analyze the code for security vulnerabilities, unsafe patterns, and potential exploits. Provide remediation suggestions.".to_string(),
-            AiOperation::DocumentCode => 
+            AiOperation::DocumentCode =>
                 "You are GrokLang's AI documenter. Add comprehensive documentation comments to the code including function descriptions, parameters, return values, and examples.".to_string(),
-            AiOperation::TranslateCode => 
+            AiOperation::TranslateCode =>
                 "You are GrokLang's AI translator. Translate the code between programming languages while preserving functionality and idiomatic patterns.".to_string(),
             AiOperation::Custom(prompt) => prompt.clone(),
         }
     }
-    
+
     pub fn name(&self) -> &str {
         match self {
             AiOperation::Optimize => "optimize",
@@ -233,22 +233,22 @@ impl AiTraceLog {
     pub fn new() -> Self {
         Self { traces: Vec::new() }
     }
-    
+
     pub fn add(&mut self, trace: AiTrace) {
         self.traces.push(trace);
     }
-    
+
     pub fn summary(&self) -> String {
         if self.traces.is_empty() {
             return "No AI operations recorded.".to_string();
         }
-        
+
         let total_ops = self.traces.len();
         let successful = self.traces.iter().filter(|t| t.success).count();
         let cached = self.traces.iter().filter(|t| t.cached).count();
         let total_latency: u64 = self.traces.iter().map(|t| t.latency_ms).sum();
         let avg_latency = total_latency / total_ops as u64;
-        
+
         format!(
             "AI Trace Summary:\n\
              - Total Operations: {}\n\
@@ -257,17 +257,19 @@ impl AiTraceLog {
              - Total Latency: {}ms\n\
              - Average Latency: {}ms",
             total_ops,
-            successful, (successful as f64 / total_ops as f64) * 100.0,
-            cached, (cached as f64 / total_ops as f64) * 100.0,
+            successful,
+            (successful as f64 / total_ops as f64) * 100.0,
+            cached,
+            (cached as f64 / total_ops as f64) * 100.0,
             total_latency,
             avg_latency
         )
     }
-    
+
     pub fn detailed_report(&self) -> String {
         let mut report = String::new();
         report.push_str("=== AI Operation Trace Log ===\n\n");
-        
+
         for (i, trace) in self.traces.iter().enumerate() {
             report.push_str(&format!(
                 "Operation #{}\n\
@@ -289,7 +291,7 @@ impl AiTraceLog {
                 trace.output_tokens
             ));
         }
-        
+
         report.push_str(&self.summary());
         report
     }
@@ -310,13 +312,15 @@ impl AiService {
     pub fn new() -> Self {
         Self::with_config(AiConfig::from_env())
     }
-    
+
     pub fn with_config(config: AiConfig) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs.max(10)))
+            // Avoid system proxy discovery in constrained/sandboxed environments.
+            .no_proxy()
             .build()
             .unwrap_or_else(|_| Client::new());
-        
+
         Self {
             client,
             config,
@@ -324,22 +328,26 @@ impl AiService {
             trace_log: AiTraceLog::new(),
         }
     }
-    
+
     pub fn config(&self) -> &AiConfig {
         &self.config
     }
-    
+
     /// Process code with an AI operation
     pub async fn process(&mut self, operation: AiOperation, code: &str) -> Result<String, String> {
         let start = Instant::now();
         let cache_key = format!("{}:{}", operation.name(), code);
-        
+
         // Check cache
         if let Some(cached_response) = self.cache.get(&cache_key) {
             let trace = AiTrace {
                 operation: operation.name().to_string(),
                 input_tokens: code.len() / 4,
-                output_tokens: cached_response.output.as_ref().map(|s| s.len() / 4).unwrap_or(0),
+                output_tokens: cached_response
+                    .output
+                    .as_ref()
+                    .map(|s| s.len() / 4)
+                    .unwrap_or(0),
                 latency_ms: start.elapsed().as_millis() as u64,
                 cached: true,
                 provider: format!("{:?}", self.config.provider),
@@ -348,7 +356,7 @@ impl AiService {
                 timestamp: std::time::SystemTime::now(),
             };
             self.trace_log.add(trace);
-            
+
             if cached_response.success {
                 let output = cached_response.output.as_ref().unwrap();
                 if self.is_safe(output) {
@@ -357,20 +365,21 @@ impl AiService {
                     return Err("AI output failed security check".to_string());
                 }
             } else {
-                return Err(cached_response.error.clone().unwrap_or_else(|| "Unknown error".to_string()));
+                return Err(cached_response
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string()));
             }
         }
-        
+
         // Perform AI call
         let response = match self.config.provider {
             AiProvider::Mock => self.mock_process(&operation, code).await,
-            AiProvider::OpenAI | AiProvider::DeepSeek => {
-                self.llm_process(&operation, code).await
-            }
+            AiProvider::OpenAI | AiProvider::DeepSeek => self.llm_process(&operation, code).await,
         };
-        
+
         let latency_ms = start.elapsed().as_millis() as u64;
-        
+
         let ai_response = match &response {
             Ok(output) => AiResponse {
                 success: true,
@@ -389,11 +398,15 @@ impl AiService {
                 cached: false,
             },
         };
-        
+
         let trace = AiTrace {
             operation: operation.name().to_string(),
             input_tokens: code.len() / 4,
-            output_tokens: ai_response.output.as_ref().map(|s| s.len() / 4).unwrap_or(0),
+            output_tokens: ai_response
+                .output
+                .as_ref()
+                .map(|s| s.len() / 4)
+                .unwrap_or(0),
             latency_ms,
             cached: false,
             provider: format!("{:?}", self.config.provider),
@@ -402,9 +415,9 @@ impl AiService {
             timestamp: std::time::SystemTime::now(),
         };
         self.trace_log.add(trace);
-        
+
         self.cache.insert(cache_key, ai_response);
-        
+
         match response {
             Ok(output) => {
                 if self.is_safe(&output) {
@@ -416,16 +429,15 @@ impl AiService {
             Err(e) => Err(e),
         }
     }
-    
+
     async fn mock_process(&self, operation: &AiOperation, code: &str) -> Result<String, String> {
         // Simulate processing delay
         tokio::time::sleep(Duration::from_millis(10)).await;
-        
+
         match operation {
-            AiOperation::Optimize => Ok(format!(
-                "// Optimized version\n{}",
-                code.replace("  ", " ")
-            )),
+            AiOperation::Optimize => {
+                Ok(format!("// Optimized version\n{}", code.replace("  ", " ")))
+            }
             AiOperation::Explain => Ok(format!(
                 "This code performs the following:\n\
                  1. Defines a function or process\n\
@@ -442,10 +454,7 @@ impl AiService {
                  Original code:\n{}",
                 code
             )),
-            AiOperation::Refactor => Ok(format!(
-                "// Refactored for clarity\n{}",
-                code
-            )),
+            AiOperation::Refactor => Ok(format!("// Refactored for clarity\n{}", code)),
             AiOperation::GenerateTests => Ok(format!(
                 "// Generated test cases\n\
                  #[test]\n\
@@ -475,26 +484,25 @@ impl AiService {
                  /// \n\
                  /// # Returns\n\
                  /// The computed result\n\
-                 {}", 
+                 {}",
                 code
             )),
-            AiOperation::TranslateCode => Ok(format!(
-                "// Translation to target language\n{}",
-                code
-            )),
-            AiOperation::Custom(prompt) => Ok(format!(
-                "// Custom operation: {}\n{}",
-                prompt, code
-            )),
+            AiOperation::TranslateCode => {
+                Ok(format!("// Translation to target language\n{}", code))
+            }
+            AiOperation::Custom(prompt) => Ok(format!("// Custom operation: {}\n{}", prompt, code)),
         }
     }
-    
+
     async fn llm_process(&self, operation: &AiOperation, code: &str) -> Result<String, String> {
-        let api_key = self.config.api_key.as_ref()
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
             .ok_or("API key not configured")?;
-        
+
         let endpoint = format!("{}/chat/completions", self.config.base_url);
-        
+
         let request = ChatRequest {
             model: self.config.model.clone(),
             messages: vec![
@@ -510,8 +518,9 @@ impl AiService {
             max_tokens: self.config.max_tokens,
             temperature: 0.3,
         };
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&endpoint)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -519,23 +528,25 @@ impl AiService {
             .send()
             .await
             .map_err(|e| format!("Network error: {}", e))?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(format!("API error {}: {}", status, body));
         }
-        
-        let json: serde_json::Value = response.json().await
+
+        let json: serde_json::Value = response
+            .json()
+            .await
             .map_err(|e| format!("JSON parse error: {}", e))?;
-        
+
         let content = json["choices"][0]["message"]["content"]
             .as_str()
             .ok_or("Invalid response format")?;
-        
+
         Ok(content.to_string())
     }
-    
+
     /// Security check for AI output
     pub fn is_safe(&self, output: &str) -> bool {
         let dangerous_patterns = [
@@ -550,21 +561,23 @@ impl AiService {
             "DELETE FROM",
             "; DROP",
         ];
-        
+
         let lower_output = output.to_lowercase();
-        !dangerous_patterns.iter().any(|p| lower_output.contains(&p.to_lowercase()))
+        !dangerous_patterns
+            .iter()
+            .any(|p| lower_output.contains(&p.to_lowercase()))
     }
-    
+
     /// Get trace log summary
     pub fn get_trace_summary(&self) -> String {
         self.trace_log.summary()
     }
-    
+
     /// Get detailed trace report
     pub fn get_trace_report(&self) -> String {
         self.trace_log.detailed_report()
     }
-    
+
     /// Clear cache
     pub fn clear_cache(&mut self) {
         self.cache.clear();
@@ -582,8 +595,10 @@ mod tests {
     #[tokio::test]
     async fn test_ai_service_mock() {
         let mut service = AiService::with_config(AiConfig::mock());
-        
-        let result = service.process(AiOperation::Explain, "fn add(a, b) { a + b }").await;
+
+        let result = service
+            .process(AiOperation::Explain, "fn add(a, b) { a + b }")
+            .await;
         assert!(result.is_ok());
         assert!(result.unwrap().contains("This code performs"));
     }
@@ -591,10 +606,10 @@ mod tests {
     #[tokio::test]
     async fn test_ai_operations() {
         let mut service = AiService::with_config(AiConfig::mock());
-        
+
         // Test all operations
         let code = "fn factorial(n) { if n <= 1 { 1 } else { n * factorial(n-1) } }";
-        
+
         let ops = vec![
             AiOperation::Optimize,
             AiOperation::Explain,
@@ -604,27 +619,32 @@ mod tests {
             AiOperation::SecurityAudit,
             AiOperation::DocumentCode,
         ];
-        
+
         for op in ops {
             let result = service.process(op.clone(), code).await;
-            assert!(result.is_ok(), "Operation {:?} failed: {:?}", op, result.err());
+            assert!(
+                result.is_ok(),
+                "Operation {:?} failed: {:?}",
+                op,
+                result.err()
+            );
         }
     }
 
     #[tokio::test]
     async fn test_ai_caching() {
         let mut service = AiService::with_config(AiConfig::mock());
-        
+
         let code = "fn test() { 42 }";
-        
+
         // First call
         let result1 = service.process(AiOperation::Explain, code).await;
         assert!(result1.is_ok());
-        
+
         // Second call (should be cached)
         let result2 = service.process(AiOperation::Explain, code).await;
         assert!(result2.is_ok());
-        
+
         // Check trace log
         assert_eq!(service.trace_log.traces.len(), 2);
         assert!(!service.trace_log.traces[0].cached);
@@ -634,7 +654,7 @@ mod tests {
     #[test]
     fn test_ai_safety() {
         let service = AiService::with_config(AiConfig::mock());
-        
+
         assert!(service.is_safe("safe code"));
         assert!(service.is_safe("normal function"));
         assert!(!service.is_safe("eval('dangerous')"));
@@ -650,11 +670,11 @@ mod tests {
         let config = AiConfig::from_env();
         assert!(matches!(config.provider, AiProvider::Mock));
     }
-    
+
     #[test]
     fn test_trace_log() {
         let mut log = AiTraceLog::new();
-        
+
         log.add(AiTrace {
             operation: "test".to_string(),
             input_tokens: 100,
@@ -666,7 +686,7 @@ mod tests {
             success: true,
             timestamp: std::time::SystemTime::now(),
         });
-        
+
         let summary = log.summary();
         assert!(summary.contains("Total Operations: 1"));
         assert!(summary.contains("Successful: 1"));

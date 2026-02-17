@@ -118,15 +118,15 @@ impl BorrowChecker {
         if b_type == BorrowType::Mutable {
             if total_borrows > 0 {
                 return Err(format!(
-                    "Cannot mutably borrow '{}' at {:?} because it is already borrowed",
-                    var, span
+                    "Cannot mutably borrow '{}' at line {} col {} because it is already borrowed",
+                    var, span.line, span.col
                 ));
             }
         } else {
             if has_mutable {
                 return Err(format!(
-                    "Cannot immutably borrow '{}' at {:?} because it is mutably borrowed",
-                    var, span
+                    "Cannot immutably borrow '{}' at line {} col {} because it is mutably borrowed",
+                    var, span.line, span.col
                 ));
             }
         }
