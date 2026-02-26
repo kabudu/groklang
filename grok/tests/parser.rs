@@ -61,6 +61,67 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_function_where_clause() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse("trait Show { fn show() {} } fn print_it(x: T) where T: Show { return; }")
+            .expect("function with where-clause should parse");
+
+        match ast {
+            AstNode::Program(nodes) => match &nodes[1] {
+                AstNode::FunctionDef { decorators, .. } => {
+                    assert!(
+                        decorators.iter().any(|d| d == "__where:T:Show"),
+                        "where metadata not captured in decorators: {:?}",
+                        decorators
+                    );
+                }
+                _ => panic!("expected function definition"),
+            },
+            _ => panic!("expected program"),
+        }
+    }
+
+    #[test]
+    fn test_parse_use_statement() {
+        let parser = Parser::new();
+        let result = parser.parse("use std::io::print;");
+        assert!(result.is_ok(), "Failed to parse use statement: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_use_group_and_glob() {
+        let parser = Parser::new();
+        let group = parser.parse("use std::io::{print as p, read};");
+        assert!(group.is_ok(), "Failed to parse grouped use: {:?}", group.err());
+
+        let glob = parser.parse("use std::io::*;");
+        assert!(glob.is_ok(), "Failed to parse glob use: {:?}", glob.err());
+    }
+
+    #[test]
+    fn test_parse_module_definition() {
+        let parser = Parser::new();
+        let result = parser.parse("mod math { fn add(a: i32, b: i32) -> i32 { a + b } }");
+        assert!(
+            result.is_ok(),
+            "Failed to parse module definition: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_module_declaration() {
+        let parser = Parser::new();
+        let result = parser.parse("mod math;");
+        assert!(
+            result.is_ok(),
+            "Failed to parse module declaration: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
     fn test_parse_match() {
         let parser = Parser::new();
         let result = parser
@@ -126,7 +187,7 @@ mod tests {
     fn test_parse_string_float_and_byte_literals() {
         let parser = Parser::new();
         let result =
-            parser.parse("fn main() { let s = \"hello\"; let f = 3.14; let b = b\"bytes\"; }");
+            parser.parse("fn main() { let s = \"hello\"; let f = 3.14; let c = 'a'; let b = b\"bytes\"; }");
         assert!(
             result.is_ok(),
             "Failed to parse literals: {:?}",
@@ -154,6 +215,61 @@ mod tests {
         assert!(
             result.is_ok(),
             "Failed to parse bitwise/shift/assignment ops: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_index_access() {
+        let parser = Parser::new();
+        let result = parser.parse("fn main(v: Vec<i32>) { let x = v[0]; }");
+        assert!(
+            result.is_ok(),
+            "Failed to parse index access expression: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_try_operator() {
+        let parser = Parser::new();
+        let result = parser.parse("fn main(v: Result<i32, i32>) -> i32 { v? }");
+        assert!(
+            result.is_ok(),
+            "Failed to parse try operator expression: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_array_literal() {
+        let parser = Parser::new();
+        let result = parser.parse("fn main() { let xs = [1, 2, 3]; }");
+        assert!(
+            result.is_ok(),
+            "Failed to parse array literal expression: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_closure_expression() {
+        let parser = Parser::new();
+        let result = parser.parse("fn main() { let f = |x: i32| x + 1; let g = move |y: i32| -> i32 { y }; }");
+        assert!(
+            result.is_ok(),
+            "Failed to parse closure expressions: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_tuple_literal() {
+        let parser = Parser::new();
+        let result = parser.parse("fn main() { let p = (1, true); }");
+        assert!(
+            result.is_ok(),
+            "Failed to parse tuple literal expression: {:?}",
             result.err()
         );
     }
@@ -203,7 +319,7 @@ mod tests {
     fn test_parse_prefixed_int_and_raw_string_literals() {
         let parser = Parser::new();
         let result = parser.parse(
-            r#"fn main() { let h = 0xFF; let b = 0b1010; let o = 0o77; let s = r"C:\tmp\file"; }"#,
+            r#"fn main() { let h = 0xFFi64; let b = 0b1010i32; let o = 0o77i32; let n = 42i64; let f = 3.14f32; let s = r"C:\tmp\file"; }"#,
         );
         assert!(
             result.is_ok(),
@@ -232,6 +348,19 @@ mod tests {
         assert!(
             result.is_ok(),
             "Failed to parse impl blocks: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_generic_impl_with_bounds() {
+        let parser = Parser::new();
+        let result = parser.parse(
+            "trait Show { fn show() {} } impl<T: Show> Show for Vec<T> { fn show() {} }",
+        );
+        assert!(
+            result.is_ok(),
+            "Failed to parse generic impl with bounds: {:?}",
             result.err()
         );
     }

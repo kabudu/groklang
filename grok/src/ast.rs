@@ -35,9 +35,27 @@ pub enum AstNode {
         bounds: Vec<String>,
         span: Span,
     },
+    UseDecl {
+        path: Vec<String>,
+        alias: Option<String>,
+        imports: Vec<(String, Option<String>)>,
+        glob: bool,
+        span: Span,
+    },
+    ModuleDecl {
+        name: String,
+        span: Span,
+    },
+    ModuleDef {
+        name: String,
+        items: Vec<AstNode>,
+        span: Span,
+    },
     ImplBlock {
         trait_name: Option<String>,
         for_type: String,
+        for_type_params: Vec<String>,
+        generic_bounds: Vec<(String, Vec<String>)>,
         methods: Vec<AstNode>,
         span: Span,
     },
@@ -108,6 +126,17 @@ pub enum AstNode {
         operand: Box<AstNode>,
         span: Span,
     },
+    TryOp {
+        expr: Box<AstNode>,
+        span: Span,
+    },
+    Closure {
+        params: Vec<Param>,
+        return_type: Option<Type>,
+        body: Box<AstNode>,
+        is_move: bool,
+        span: Span,
+    },
     FunctionCall {
         func: Box<AstNode>,
         args: Vec<AstNode>,
@@ -116,6 +145,11 @@ pub enum AstNode {
     MemberAccess {
         object: Box<AstNode>,
         member: String,
+        span: Span,
+    },
+    IndexAccess {
+        object: Box<AstNode>,
+        index: Box<AstNode>,
         span: Span,
     },
     MatchExpr {
@@ -129,9 +163,11 @@ pub enum AstNode {
         else_body: Option<Box<AstNode>>,
         span: Span,
     },
+    TupleLiteral(Vec<AstNode>, Span),
     Identifier(String, Span),
     IntLiteral(i64, Span),
     FloatLiteral(f64, Span),
+    CharLiteral(char, Span),
     StringLiteral(String, Span),
     ByteStringLiteral(Vec<u8>, Span),
     MacroDef {
@@ -150,6 +186,7 @@ pub enum AstNode {
         span: Span,
     },
     BoolLiteral(bool, Span),
+    ArrayLiteral(Vec<AstNode>, Span),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -186,6 +223,7 @@ pub enum Type {
     Variable(String),
     Generic(String, Vec<Type>),
     Function(Vec<Type>, Box<Type>),
+    Tuple(Vec<Type>),
     Struct(String, Vec<(String, Type)>),
     Trait(String),
     Reference(Box<Type>, bool),
@@ -217,6 +255,16 @@ impl std::fmt::Display for Type {
                     write!(f, "{}", p)?;
                 }
                 write!(f, ") -> {}", ret)
+            }
+            Type::Tuple(items) => {
+                write!(f, "(")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, ")")
             }
             Type::Struct(n, _) => write!(f, "struct {}", n),
             Type::Trait(n) => write!(f, "trait {}", n),

@@ -126,11 +126,32 @@ impl MacroExpander {
                 right: Box::new(self.expand(*right)),
                 span,
             },
+            AstNode::TryOp { expr, span } => AstNode::TryOp {
+                expr: Box::new(self.expand(*expr)),
+                span,
+            },
+            AstNode::Closure {
+                params,
+                return_type,
+                body,
+                is_move,
+                span,
+            } => AstNode::Closure {
+                params,
+                return_type,
+                body: Box::new(self.expand(*body)),
+                is_move,
+                span,
+            },
             AstNode::FunctionCall { func, args, span } => AstNode::FunctionCall {
                 func: Box::new(self.expand(*func)),
                 args: args.into_iter().map(|a| self.expand(a)).collect(),
                 span,
             },
+            AstNode::ArrayLiteral(items, span) => AstNode::ArrayLiteral(
+                items.into_iter().map(|item| self.expand(item)).collect(),
+                span,
+            ),
             AstNode::MatchExpr {
                 scrutinee,
                 arms,
@@ -308,6 +329,26 @@ impl MacroExpander {
                     .collect(),
                 span,
             },
+            AstNode::Closure {
+                params,
+                return_type,
+                body,
+                is_move,
+                span,
+            } => AstNode::Closure {
+                params,
+                return_type,
+                body: Box::new(self.substitute(*body, bindings)),
+                is_move,
+                span,
+            },
+            AstNode::ArrayLiteral(items, span) => AstNode::ArrayLiteral(
+                items
+                    .into_iter()
+                    .map(|item| self.substitute(item, bindings))
+                    .collect(),
+                span,
+            ),
             AstNode::MacroCall { name, args, span } => AstNode::MacroCall {
                 name,
                 args: args

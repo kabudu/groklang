@@ -102,8 +102,13 @@ fn identifier(input: Input) -> IResult<Input, String> {
 
 fn float_literal(input: Input) -> IResult<Input, f64> {
     map(
-        tuple((digit1, char('.'), digit1)),
-        |(int_part, _, frac_part): (Input, char, Input)| {
+        tuple((
+            digit1,
+            char('.'),
+            digit1,
+            opt(alt((tag("f32"), tag("f64")))),
+        )),
+        |(int_part, _, frac_part, _): (Input, char, Input, Option<Input>)| {
             format!("{}.{}", int_part.fragment(), frac_part.fragment())
                 .parse()
                 .unwrap()
@@ -114,18 +119,30 @@ fn float_literal(input: Input) -> IResult<Input, f64> {
 fn int_literal(input: Input) -> IResult<Input, i64> {
     alt((
         map(
-            preceded(tag("0x"), take_while1(|c: char| c.is_ascii_hexdigit())),
-            |n: Input| i64::from_str_radix(n.fragment(), 16).unwrap(),
+            pair(
+                preceded(tag("0x"), take_while1(|c: char| c.is_ascii_hexdigit())),
+                opt(alt((tag("i32"), tag("i64")))),
+            ),
+            |(n, _): (Input, Option<Input>)| i64::from_str_radix(n.fragment(), 16).unwrap(),
         ),
         map(
-            preceded(tag("0b"), take_while1(|c: char| c == '0' || c == '1')),
-            |n: Input| i64::from_str_radix(n.fragment(), 2).unwrap(),
+            pair(
+                preceded(tag("0b"), take_while1(|c: char| c == '0' || c == '1')),
+                opt(alt((tag("i32"), tag("i64")))),
+            ),
+            |(n, _): (Input, Option<Input>)| i64::from_str_radix(n.fragment(), 2).unwrap(),
         ),
         map(
-            preceded(tag("0o"), take_while1(|c: char| ('0'..='7').contains(&c))),
-            |n: Input| i64::from_str_radix(n.fragment(), 8).unwrap(),
+            pair(
+                preceded(tag("0o"), take_while1(|c: char| ('0'..='7').contains(&c))),
+                opt(alt((tag("i32"), tag("i64")))),
+            ),
+            |(n, _): (Input, Option<Input>)| i64::from_str_radix(n.fragment(), 8).unwrap(),
         ),
-        map(digit1, |n: Input| n.parse().unwrap()),
+        map(
+            pair(digit1, opt(alt((tag("i32"), tag("i64"))))),
+            |(n, _): (Input, Option<Input>)| n.parse().unwrap(),
+        ),
     ))(input)
 }
 
@@ -137,6 +154,14 @@ fn string_literal(input: Input) -> IResult<Input, String> {
             char('"'),
         ),
         |s: Input| s.to_string(),
+    )(input)
+}
+
+fn char_literal(input: Input) -> IResult<Input, char> {
+    delimited(
+        char('\''),
+        nom::character::complete::none_of("'\n"),
+        char('\''),
     )(input)
 }
 
@@ -174,6 +199,8 @@ fn program(input: Input) -> IResult<Input, AstNode> {
 
 fn declaration(input: Input) -> IResult<Input, AstNode> {
     alt((
+        use_decl,
+        module_def,
         function_def,
         struct_def,
         enum_def,
@@ -183,6 +210,88 @@ fn declaration(input: Input) -> IResult<Input, AstNode> {
         macro_rules_def,
         map(statement, |s| s),
     ))(input)
+}
+
+fn path(input: Input) -> IResult<Input, Vec<String>> {
+    separated_list1(ws(tag("::")), ws(identifier))(input)
+}
+
+fn use_import(input: Input) -> IResult<Input, (String, Option<String>)> {
+    map(
+        pair(identifier, opt(preceded(ws(tag("as")), ws(identifier)))),
+        |(name, alias)| (name, alias),
+    )(input)
+}
+
+fn use_decl(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    map(
+        tuple((
+            tag("use"),
+            ws(path),
+            opt(alt((
+                map(preceded(ws(tag("::")), ws(char('*'))), |_| {
+                    (None, Vec::new(), true)
+                }),
+                map(
+                    preceded(
+                        ws(tag("::")),
+                        delimited(
+                            ws(char('{')),
+                            terminated(
+                                separated_list1(ws(char(',')), ws(use_import)),
+                                opt(ws(char(','))),
+                            ),
+                            ws(char('}')),
+                        ),
+                    ),
+                    |imports| (None, imports, false),
+                ),
+                map(preceded(ws(tag("as")), ws(identifier)), |alias| {
+                    (Some(alias), Vec::new(), false)
+                }),
+            ))),
+            ws(char(';')),
+        )),
+        move |(_, path, suffix, _)| {
+            let (alias, imports, glob) = suffix.unwrap_or((None, Vec::new(), false));
+            AstNode::UseDecl {
+            path,
+            alias,
+            imports,
+            glob,
+            span: start_span.clone(),
+        }
+        },
+    )(input)
+}
+
+fn module_def(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    map(
+        tuple((
+            tag("mod"),
+            ws(identifier),
+            ws(alt((
+                map(ws(char(';')), |_| None),
+                map(
+                    delimited(ws(char('{')), many0(ws(declaration)), ws(char('}'))),
+                    Some,
+                ),
+            ))),
+        )),
+        move |(_, name, maybe_items)| match maybe_items {
+            Some(items) => AstNode::ModuleDef {
+                name,
+                items,
+                span: start_span.clone(),
+            },
+            None => AstNode::ModuleDecl {
+                name,
+                span: start_span.clone(),
+            },
+        },
+    )(input)
 }
 
 fn macro_rules_def(input: Input) -> IResult<Input, AstNode> {
@@ -228,16 +337,39 @@ fn function_def(input: Input) -> IResult<Input, AstNode> {
                 ws(tag("->")),
                 alt((map(ws(tag("()")), |_| Type::Unit), ws(type_annotation))),
             )),
+            opt(preceded(ws(tag("where")), ws(where_clause))),
             ws(block),
         )),
-        move |(_, name, params, ret_type, body)| AstNode::FunctionDef {
+        move |(_, name, params, ret_type, where_bounds, body)| {
+            let mut decorators = Vec::new();
+            if let Some(bounds) = where_bounds {
+                for (type_var, traits) in bounds {
+                    decorators.push(format!("__where:{}:{}", type_var, traits.join("+")));
+                }
+            }
+            AstNode::FunctionDef {
             name,
             params,
             return_type: ret_type,
             body: Box::new(body),
-            decorators: vec![],
+            decorators,
             span: start_span.clone(),
+        }
         },
+    )(input)
+}
+
+fn where_clause(input: Input) -> IResult<Input, Vec<(String, Vec<String>)>> {
+    separated_list1(
+        ws(char(',')),
+        map(
+            tuple((
+                identifier,
+                ws(char(':')),
+                separated_list1(ws(char('+')), ws(identifier)),
+            )),
+            |(type_var, _, traits)| (type_var, traits),
+        ),
     )(input)
 }
 
@@ -313,27 +445,68 @@ fn trait_def(input: Input) -> IResult<Input, AstNode> {
     )(input)
 }
 
+fn impl_generic_param(input: Input) -> IResult<Input, (String, Vec<String>)> {
+    map(
+        pair(
+            identifier,
+            opt(preceded(
+                ws(char(':')),
+                separated_list1(ws(char('+')), ws(identifier)),
+            )),
+        ),
+        |(name, bounds)| (name, bounds.unwrap_or_default()),
+    )(input)
+}
+
+fn impl_generics(input: Input) -> IResult<Input, Vec<(String, Vec<String>)>> {
+    delimited(
+        ws(char('<')),
+        separated_list1(ws(char(',')), ws(impl_generic_param)),
+        ws(char('>')),
+    )(input)
+}
+
+fn impl_type_head(input: Input) -> IResult<Input, (String, Vec<String>)> {
+    map(
+        pair(
+            identifier,
+            opt(delimited(
+                ws(char('<')),
+                separated_list1(ws(char(',')), ws(identifier)),
+                ws(char('>')),
+            )),
+        ),
+        |(name, args)| (name, args.unwrap_or_default()),
+    )(input)
+}
+
 fn impl_def(input: Input) -> IResult<Input, AstNode> {
     let start_span = span_from(input);
     map(
         tuple((
             tag("impl"),
-            ws(identifier),
-            opt(preceded(ws(tag("for")), ws(identifier))),
+            opt(ws(impl_generics)),
+            ws(impl_type_head),
+            opt(preceded(ws(tag("for")), ws(impl_type_head))),
             delimited(char('{'), many0(ws(function_def)), char('}')),
         )),
-        move |(_, first, maybe_for_type, methods)| {
-            if let Some(for_type) = maybe_for_type {
+        move |(_, maybe_generics, first, maybe_for_type, methods)| {
+            let generic_bounds = maybe_generics.unwrap_or_default();
+            if let Some((for_type, for_type_params)) = maybe_for_type {
                 AstNode::ImplBlock {
-                    trait_name: Some(first),
+                    trait_name: Some(first.0),
                     for_type,
+                    for_type_params,
+                    generic_bounds: generic_bounds.clone(),
                     methods,
                     span: start_span.clone(),
                 }
             } else {
                 AstNode::ImplBlock {
                     trait_name: None,
-                    for_type: first,
+                    for_type: first.0,
+                    for_type_params: first.1,
+                    generic_bounds,
                     methods,
                     span: start_span.clone(),
                 }
@@ -464,7 +637,6 @@ fn assignment_expr(input: Input) -> IResult<Input, AstNode> {
     let start_span = span_from(input);
     let (input, left) = send_expr(input)?;
     if let Ok((input, op)) = ws(alt((
-        tag("="),
         tag("+="),
         tag("-="),
         tag("*="),
@@ -475,6 +647,7 @@ fn assignment_expr(input: Input) -> IResult<Input, AstNode> {
         tag("^="),
         tag("<<="),
         tag(">>="),
+        terminated(tag("="), not(tag(">"))),
     )))(input)
     {
         let (input, right) = assignment_expr(input)?;
@@ -891,6 +1064,19 @@ fn postfix_expr(input: Input) -> IResult<Input, AstNode> {
                 span: start_span,
             };
             input = i2;
+        } else if let Ok((i, index)) = delimited(ws(char('[')), expression, ws(char(']')))(input) {
+            left = AstNode::IndexAccess {
+                object: Box::new(left),
+                index: Box::new(index),
+                span: start_span,
+            };
+            input = i;
+        } else if let Ok((i, _)) = ws(char('?'))(input) {
+            left = AstNode::TryOp {
+                expr: Box::new(left),
+                span: start_span,
+            };
+            input = i;
         } else if let Ok((i, args)) = delimited(
             ws(char('(')),
             separated_list0(ws(char(',')), expression),
@@ -921,12 +1107,16 @@ fn primary_expr(input: Input) -> IResult<Input, AstNode> {
     let s6 = span.clone();
     let s7 = span.clone();
     let s8 = span.clone();
+    let s9 = span.clone();
     alt((
         macro_call,
         if_expr,
         match_expr,
         receive_expr,
         spawn_expr,
+        closure_expr,
+        tuple_literal,
+        array_literal,
         struct_literal,
         map(ws(tag("true")), move |_| {
             AstNode::BoolLiteral(true, s1.clone())
@@ -935,6 +1125,7 @@ fn primary_expr(input: Input) -> IResult<Input, AstNode> {
             AstNode::BoolLiteral(false, s2.clone())
         }),
         map(float_literal, move |f| AstNode::FloatLiteral(f, s5.clone())),
+        map(char_literal, move |c| AstNode::CharLiteral(c, s9.clone())),
         map(string_literal, move |s| {
             AstNode::StringLiteral(s, s6.clone())
         }),
@@ -948,6 +1139,64 @@ fn primary_expr(input: Input) -> IResult<Input, AstNode> {
         map(int_literal, move |n| AstNode::IntLiteral(n, s4.clone())),
         delimited(char('('), expression, char(')')),
     ))(input)
+}
+
+fn tuple_literal(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    map(
+        tuple((
+            ws(char('(')),
+            ws(expression),
+            ws(char(',')),
+            separated_list0(ws(char(',')), ws(expression)),
+            opt(ws(char(','))),
+            ws(char(')')),
+        )),
+        move |(_, first, _, rest, _, _)| {
+            let mut items = vec![first];
+            items.extend(rest);
+            AstNode::TupleLiteral(items, start_span.clone())
+        },
+    )(input)
+}
+
+fn closure_params(input: Input) -> IResult<Input, Vec<Param>> {
+    delimited(
+        ws(char('|')),
+        separated_list0(ws(char(',')), ws(param)),
+        ws(char('|')),
+    )(input)
+}
+
+fn closure_expr(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    map(
+        tuple((
+            opt(terminated(tag("move"), skip_ws_and_comments)),
+            ws(closure_params),
+            opt(preceded(ws(tag("->")), ws(type_annotation))),
+            ws(alt((block, expression))),
+        )),
+        move |(move_kw, params, return_type, body)| AstNode::Closure {
+            params,
+            return_type,
+            body: Box::new(body),
+            is_move: move_kw.is_some(),
+            span: start_span.clone(),
+        },
+    )(input)
+}
+
+fn array_literal(input: Input) -> IResult<Input, AstNode> {
+    let start_span = span_from(input);
+    map(
+        delimited(
+            ws(char('[')),
+            separated_list0(ws(char(',')), expression),
+            ws(char(']')),
+        ),
+        move |items| AstNode::ArrayLiteral(items, start_span.clone()),
+    )(input)
 }
 
 fn struct_literal(input: Input) -> IResult<Input, AstNode> {
@@ -1007,6 +1256,21 @@ fn param(input: Input) -> IResult<Input, Param> {
 fn type_annotation(input: Input) -> IResult<Input, Type> {
     alt((
         map(tag("()"), |_| Type::Unit),
+        map(
+            tuple((
+                ws(char('(')),
+                ws(type_annotation),
+                ws(char(',')),
+                separated_list0(ws(char(',')), ws(type_annotation)),
+                opt(ws(char(','))),
+                ws(char(')')),
+            )),
+            |(_, first, _, rest, _, _)| {
+                let mut items = vec![first];
+                items.extend(rest);
+                Type::Tuple(items)
+            },
+        ),
         map(tuple((tag("trait"), ws(identifier))), |(_, name)| {
             Type::Trait(name)
         }),
@@ -1029,6 +1293,7 @@ fn type_annotation(input: Input) -> IResult<Input, Type> {
         map(tag("i64"), |_| Type::Primitive("i64".to_string())),
         map(tag("f32"), |_| Type::Primitive("f32".to_string())),
         map(tag("f64"), |_| Type::Primitive("f64".to_string())),
+        map(tag("char"), |_| Type::Primitive("char".to_string())),
         map(tag("bool"), |_| Type::Primitive("bool".to_string())),
         map(tag("String"), |_| Type::Primitive("String".to_string())),
         map(identifier, |id| Type::Variable(id)),
