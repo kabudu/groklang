@@ -15,6 +15,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_pub_function() {
+        let parser = Parser::new();
+        let result = parser.parse("pub fn add(a: i32, b: i32) -> i32 {}");
+        assert!(
+            result.is_ok(),
+            "Failed to parse pub function: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
     fn test_parse_struct() {
         let parser = Parser::new();
         let result = parser.parse("struct Point { x: i32, y: i32 }");
@@ -196,6 +207,30 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_escaped_string_and_byte_literals() {
+        let parser = Parser::new();
+        let result = parser.parse(
+            "fn main() { let s = \"line\\nquote:\\\"\"; let b = b\"a\\n\\t\\\\\\\"\"; }",
+        );
+        assert!(
+            result.is_ok(),
+            "Failed to parse escaped string/byte literals: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_escaped_char_literal() {
+        let parser = Parser::new();
+        let result = parser.parse("fn main() { let c = '\\n'; let q = '\\''; }");
+        assert!(
+            result.is_ok(),
+            "Failed to parse escaped char literals: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
     fn test_parse_reference_and_generic_types() {
         let parser = Parser::new();
         let result = parser.parse("fn id(x: &mut Vec<i32>) -> () { return; }");
@@ -217,6 +252,24 @@ mod tests {
             "Failed to parse bitwise/shift/assignment ops: {:?}",
             result.err()
         );
+    }
+
+    #[test]
+    fn test_parse_unary_bitwise_not() {
+        let parser = Parser::new();
+        let result = parser.parse("fn main() { let x = ~1; }");
+        assert!(
+            result.is_ok(),
+            "Failed to parse unary bitwise-not: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_parse_unary_plus() {
+        let parser = Parser::new();
+        let result = parser.parse("fn main() { let x = +1; }");
+        assert!(result.is_ok(), "Failed to parse unary plus: {:?}", result.err());
     }
 
     #[test]

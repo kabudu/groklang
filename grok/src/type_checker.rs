@@ -1,5 +1,5 @@
 // grok/src/type_checker.rs
-use crate::ast::{AstNode, MatchArm, Pattern, Type};
+use crate::ast::{AstNode, MatchArm, Pattern, Span, Type};
 use crate::macro_expander::MacroExpander;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -7,6 +7,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 pub struct Constraint {
     pub left: Type,
     pub right: Type,
+    pub span: Option<Span>,
 }
 
 #[derive(Clone)]
@@ -59,6 +60,7 @@ pub struct TypeChecker {
     generic_trait_impls: Vec<GenericTraitImpl>,
     function_where_bounds: HashMap<String, Vec<(String, Vec<String>)>>,
     module_symbols: HashMap<String, HashSet<String>>,
+    module_public_symbols: HashMap<String, HashSet<String>>,
     module_children: HashMap<String, HashSet<String>>,
     module_decls: HashSet<String>,
     actor_message_types: HashMap<String, Type>,
@@ -77,11 +79,13 @@ struct GenericTraitImpl {
     for_type_head: String,
     for_type_params: Vec<String>,
     for_type_param_positions: HashMap<String, Vec<usize>>,
+    for_type_param: Option<String>,
     generic_bounds: HashMap<String, Vec<String>>,
 }
 
 impl TypeChecker {
     const RECURSIVE_DOMAIN_WILDCARD: &'static str = "*";
+    const RECURSIVE_ENUM_UNFOLD_DEPTH: usize = 2;
 
     fn format_span(span: &crate::ast::Span) -> String {
         format!(" at line {} col {}", span.line, span.col)
@@ -102,6 +106,7 @@ impl TypeChecker {
             generic_trait_impls: Vec::new(),
             function_where_bounds: HashMap::new(),
             module_symbols: HashMap::new(),
+            module_public_symbols: HashMap::new(),
             module_children: HashMap::new(),
             module_decls: HashSet::new(),
             actor_message_types: HashMap::new(),
@@ -127,6 +132,14 @@ impl TypeChecker {
         Type::Variable(name)
     }
 
+    fn add_constraint(&mut self, left: Type, right: Type, span: Option<&Span>) {
+        self.constraints.push(Constraint {
+            left,
+            right,
+            span: span.cloned(),
+        });
+    }
+
     pub fn check(&mut self, ast: &AstNode) -> Result<HashMap<String, Type>, String> {
         let mut expander = MacroExpander::new();
         let expanded_ast = expander.expand(ast.clone());
@@ -143,6 +156,7 @@ impl TypeChecker {
         self.generic_trait_impls.clear();
         self.function_where_bounds.clear();
         self.module_symbols.clear();
+        self.module_public_symbols.clear();
         self.module_children.clear();
         self.module_decls.clear();
         self.actor_message_types.clear();
@@ -153,6 +167,7 @@ impl TypeChecker {
         // Pass 1: Collect definitions
         self.collect_definitions(&expanded_ast)?;
         self.collect_module_index(&expanded_ast, &[]);
+        self.validate_module_semantics(&expanded_ast)?;
 
         // Pass 1.5: Validate declared type annotations.
         self.validate_type_annotations(&expanded_ast)?;
@@ -249,7 +264,11 @@ impl TypeChecker {
                 span,
                 ..
             } => {
-                if !self.global_types.contains_key(for_type) {
+                let generic_param_names: HashSet<String> =
+                    generic_bounds.iter().map(|(p, _)| p.clone()).collect();
+                let is_blanket_type_param_impl =
+                    for_type_params.is_empty() && generic_param_names.contains(for_type);
+                if !is_blanket_type_param_impl && !self.global_types.contains_key(for_type) {
                     return Err(format!(
                         "Unknown type in impl block: {}{}",
                         for_type,
@@ -259,7 +278,9 @@ impl TypeChecker {
 
                 let for_type_params_set: HashSet<String> = for_type_params.iter().cloned().collect();
                 for (bound_param, _) in generic_bounds {
-                    if !for_type_params_set.contains(bound_param) {
+                    let allowed_for_blanket =
+                        is_blanket_type_param_impl && bound_param == for_type;
+                    if !for_type_params_set.contains(bound_param) && !allowed_for_blanket {
                         return Err(format!(
                             "Impl generic bound references '{}' not present in impl type parameter list{}",
                             bound_param,
@@ -306,11 +327,18 @@ impl TypeChecker {
                         self.trait_impls
                             .insert((trait_name.clone(), for_type.clone()));
                     } else {
-                self.generic_trait_impls.push(GenericTraitImpl {
+                        self.generic_trait_impls.push(GenericTraitImpl {
                             trait_name: trait_name.clone(),
                             for_type_head: for_type.clone(),
                             for_type_params: for_type_params.clone(),
-                            for_type_param_positions: Self::for_type_param_positions(for_type_params),
+                            for_type_param_positions: Self::for_type_param_positions(
+                                for_type_params,
+                            ),
+                            for_type_param: if is_blanket_type_param_impl {
+                                Some(for_type.clone())
+                            } else {
+                                None
+                            },
                             generic_bounds: generic_bounds
                                 .iter()
                                 .map(|(p, b)| (p.clone(), b.clone()))
@@ -346,6 +374,7 @@ impl TypeChecker {
                                     method_name,
                                     trait_sig,
                                     impl_sig,
+                                    Some(span),
                                 )?;
                             }
                         }
@@ -638,8 +667,21 @@ impl TypeChecker {
 
                 for item in items {
                     match item {
-                        AstNode::FunctionDef { name, .. }
-                        | AstNode::StructDef { name, .. }
+                        AstNode::FunctionDef {
+                            name, decorators, ..
+                        } => {
+                            self.module_symbols
+                                .entry(key.clone())
+                                .or_default()
+                                .insert(name.clone());
+                            if decorators.iter().any(|d| d == "__pub") {
+                                self.module_public_symbols
+                                    .entry(key.clone())
+                                    .or_default()
+                                    .insert(name.clone());
+                            }
+                        }
+                        AstNode::StructDef { name, .. }
                         | AstNode::EnumDef { name, .. }
                         | AstNode::TraitDef { name, .. }
                         | AstNode::ActorDef { name, .. } => {
@@ -716,7 +758,7 @@ impl TypeChecker {
 
                 if *glob {
                     let module_key = Self::module_key(path);
-                    if let Some(symbols) = self.module_symbols.get(&module_key).cloned() {
+                    if let Some(symbols) = self.module_public_symbols.get(&module_key).cloned() {
                         for sym in symbols {
                             self.bind_imported_symbol(&sym, &sym);
                         }
@@ -725,7 +767,16 @@ impl TypeChecker {
                 }
 
                 if !imports.is_empty() {
+                    let module_key = Self::module_key(path);
                     for (name, maybe_alias) in imports {
+                        let is_public = self
+                            .module_public_symbols
+                            .get(&module_key)
+                            .map(|s| s.contains(name))
+                            .unwrap_or(false);
+                        if !is_public {
+                            continue;
+                        }
                         let bind_as = maybe_alias.as_deref().unwrap_or(name);
                         self.bind_imported_symbol(name, bind_as);
                     }
@@ -734,6 +785,15 @@ impl TypeChecker {
 
                 if path.len() >= 2 {
                     let leaf = path.last().cloned().unwrap_or_default();
+                    let parent = Self::module_key(&path[..path.len() - 1]);
+                    let is_public = self
+                        .module_public_symbols
+                        .get(&parent)
+                        .map(|s| s.contains(&leaf))
+                        .unwrap_or(false);
+                    if !is_public {
+                        return Ok(());
+                    }
                     let bind_as = alias.as_deref().unwrap_or(&leaf);
                     self.bind_imported_symbol(&leaf, bind_as);
                 }
@@ -741,6 +801,78 @@ impl TypeChecker {
             _ => {}
         }
         Ok(())
+    }
+
+    fn validate_module_semantics(&self, ast: &AstNode) -> Result<(), String> {
+        let mut decl_spans: HashMap<String, Vec<crate::ast::Span>> = HashMap::new();
+        let mut def_spans: HashMap<String, Vec<crate::ast::Span>> = HashMap::new();
+        Self::collect_module_spans(ast, &[], &mut decl_spans, &mut def_spans);
+
+        let mut keys: HashSet<String> = decl_spans.keys().cloned().collect();
+        keys.extend(def_spans.keys().cloned());
+
+        for key in keys {
+            let decls = decl_spans.get(&key).cloned().unwrap_or_default();
+            let defs = def_spans.get(&key).cloned().unwrap_or_default();
+
+            if decls.len() > 1 {
+                let s = &decls[1];
+                return Err(format!(
+                    "Duplicate module declaration: {}{}",
+                    key,
+                    Self::format_span(s)
+                ));
+            }
+            if defs.len() > 1 {
+                let s = &defs[1];
+                return Err(format!(
+                    "Duplicate module definition: {}{}",
+                    key,
+                    Self::format_span(s)
+                ));
+            }
+            if !decls.is_empty() && !defs.is_empty() {
+                let s = &defs[0];
+                return Err(format!(
+                    "Module '{}' has both declaration and definition{}",
+                    key,
+                    Self::format_span(s)
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn collect_module_spans(
+        ast: &AstNode,
+        prefix: &[String],
+        decl_spans: &mut HashMap<String, Vec<crate::ast::Span>>,
+        def_spans: &mut HashMap<String, Vec<crate::ast::Span>>,
+    ) {
+        match ast {
+            AstNode::Program(nodes) | AstNode::Block(nodes) => {
+                for n in nodes {
+                    Self::collect_module_spans(n, prefix, decl_spans, def_spans);
+                }
+            }
+            AstNode::ModuleDecl { name, span } => {
+                let mut full = prefix.to_vec();
+                full.push(name.clone());
+                let key = Self::module_key(&full);
+                decl_spans.entry(key).or_default().push(span.clone());
+            }
+            AstNode::ModuleDef { name, items, span } => {
+                let mut full = prefix.to_vec();
+                full.push(name.clone());
+                let key = Self::module_key(&full);
+                def_spans.entry(key).or_default().push(span.clone());
+                for item in items {
+                    Self::collect_module_spans(item, &full, decl_spans, def_spans);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn validate_use_decl(
@@ -780,6 +912,11 @@ impl TypeChecker {
                 ));
             }
             for (name, _) in imports {
+                let public_ok = self
+                    .module_public_symbols
+                    .get(&module_key)
+                    .map(|s| s.contains(name))
+                    .unwrap_or(false);
                 let symbol_ok = self
                     .module_symbols
                     .get(&module_key)
@@ -793,6 +930,14 @@ impl TypeChecker {
                 if !symbol_ok && !child_ok {
                     return Err(format!(
                         "Unknown import '{}' in grouped use path {}{}",
+                        name,
+                        module_key,
+                        Self::format_span(span)
+                    ));
+                }
+                if symbol_ok && !public_ok {
+                    return Err(format!(
+                        "Import '{}' in path {} is private{}",
                         name,
                         module_key,
                         Self::format_span(span)
@@ -820,6 +965,11 @@ impl TypeChecker {
             .get(&parent)
             .map(|s| s.contains(leaf))
             .unwrap_or(false);
+        let public_ok = self
+            .module_public_symbols
+            .get(&parent)
+            .map(|s| s.contains(leaf))
+            .unwrap_or(false);
         let child_ok = self
             .module_children
             .get(&parent)
@@ -829,6 +979,14 @@ impl TypeChecker {
             return Err(format!(
                 "Unknown import path: {}{}",
                 Self::module_key(path),
+                Self::format_span(span)
+            ));
+        }
+        if symbol_ok && !public_ok {
+            return Err(format!(
+                "Import '{}' in path {} is private{}",
+                leaf,
+                parent,
                 Self::format_span(span)
             ));
         }
@@ -993,6 +1151,33 @@ impl TypeChecker {
 
         for gi in &self.generic_trait_impls {
             if !self.trait_implies(&gi.trait_name, trait_name) {
+                continue;
+            }
+            if let Some(type_param) = &gi.for_type_param {
+                let mut mapping: HashMap<String, Type> = HashMap::new();
+                mapping.insert(type_param.clone(), ty.clone());
+                let mut ok = true;
+                for (param, bounds) in &gi.generic_bounds {
+                    let arg_ty = match mapping.get(param) {
+                        Some(t) => t,
+                        None => {
+                            ok = false;
+                            break;
+                        }
+                    };
+                    for b in bounds {
+                        if !self.satisfies_trait_for_type(b, arg_ty) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if !ok {
+                        break;
+                    }
+                }
+                if ok {
+                    return true;
+                }
                 continue;
             }
             match ty {
@@ -1161,15 +1346,19 @@ impl TypeChecker {
         method_name: &str,
         trait_sig: &MethodSignature,
         impl_sig: &MethodSignature,
+        span: Option<&crate::ast::Span>,
     ) -> Result<(), String> {
         if trait_sig.params.len() != impl_sig.params.len() {
-            return Err(format!(
-                "Impl method '{}' for trait '{}' on '{}' has wrong arity: expected {}, got {}",
-                method_name,
-                trait_name,
-                for_type,
-                trait_sig.params.len(),
-                impl_sig.params.len()
+            return Err(Self::with_optional_span(
+                format!(
+                    "Impl method '{}' for trait '{}' on '{}' has wrong arity: expected {}, got {}",
+                    method_name,
+                    trait_name,
+                    for_type,
+                    trait_sig.params.len(),
+                    impl_sig.params.len()
+                ),
+                span,
             ));
         }
 
@@ -1181,14 +1370,17 @@ impl TypeChecker {
         {
             if let Some(expected) = trait_param {
                 if impl_param.as_ref() != Some(expected) {
-                    return Err(format!(
-                        "Impl method '{}' for trait '{}' on '{}' has incompatible type for parameter {}: expected {:?}, got {:?}",
-                        method_name,
-                        trait_name,
-                        for_type,
-                        idx + 1,
-                        expected,
-                        impl_param
+                    return Err(Self::with_optional_span(
+                        format!(
+                            "Impl method '{}' for trait '{}' on '{}' has incompatible type for parameter {}: expected {:?}, got {:?}",
+                            method_name,
+                            trait_name,
+                            for_type,
+                            idx + 1,
+                            expected,
+                            impl_param
+                        ),
+                        span,
                     ));
                 }
             }
@@ -1196,9 +1388,12 @@ impl TypeChecker {
 
         if let Some(expected_ret) = &trait_sig.return_type {
             if impl_sig.return_type.as_ref() != Some(expected_ret) {
-                return Err(format!(
-                    "Impl method '{}' for trait '{}' on '{}' has incompatible return type: expected {:?}, got {:?}",
-                    method_name, trait_name, for_type, expected_ret, impl_sig.return_type
+                return Err(Self::with_optional_span(
+                    format!(
+                        "Impl method '{}' for trait '{}' on '{}' has incompatible return type: expected {:?}, got {:?}",
+                        method_name, trait_name, for_type, expected_ret, impl_sig.return_type
+                    ),
+                    span,
                 ));
             }
         }
@@ -1211,6 +1406,15 @@ impl TypeChecker {
             Some(s) => format!("{}{}", msg, Self::format_span(s)),
             None => msg,
         }
+    }
+
+    fn is_assignable_target(expr: &AstNode) -> bool {
+        matches!(
+            expr,
+            AstNode::Identifier(_, _)
+                | AstNode::MemberAccess { .. }
+                | AstNode::IndexAccess { .. }
+        )
     }
 
     fn validate_type(&self, ty: &Type, span: Option<&crate::ast::Span>) -> Result<(), String> {
@@ -1314,6 +1518,7 @@ impl TypeChecker {
                 params,
                 body,
                 return_type,
+                span,
                 ..
             } => {
                 let mut param_types = Vec::new();
@@ -1325,10 +1530,7 @@ impl TypeChecker {
 
                 let body_type = self.collect(body, env)?;
                 if let Some(ret_ty) = return_type {
-                    self.constraints.push(Constraint {
-                        left: body_type.clone(),
-                        right: ret_ty.clone(),
-                    });
+                    self.add_constraint(body_type.clone(), ret_ty.clone(), Some(span));
                 }
 
                 let func_type = Type::Function(param_types, Box::new(body_type));
@@ -1358,14 +1560,11 @@ impl TypeChecker {
                 mutable: _,
                 ty,
                 expr,
-                ..
+                span,
             } => {
                 let expr_type = self.collect(expr, env)?;
                 if let Some(declared_ty) = ty {
-                    self.constraints.push(Constraint {
-                        left: expr_type.clone(),
-                        right: declared_ty.clone(),
-                    });
+                    self.add_constraint(expr_type.clone(), declared_ty.clone(), Some(span));
                 }
                 env.bind(name.clone(), expr_type.clone());
                 Ok(expr_type)
@@ -1381,10 +1580,21 @@ impl TypeChecker {
             AstNode::FloatLiteral(_, _) => Ok(Type::Primitive("f64".to_string())),
             AstNode::CharLiteral(_, _) => Ok(Type::Primitive("char".to_string())),
             AstNode::StringLiteral(_, _) => Ok(Type::Primitive("str".to_string())),
+            AstNode::ByteStringLiteral(_, _) => Ok(Type::Generic(
+                "Vec".to_string(),
+                vec![Type::Primitive("u8".to_string())],
+            )),
             AstNode::BoolLiteral(_, _) => Ok(Type::Primitive("bool".to_string())),
             AstNode::Identifier(name, span) => env
                 .lookup(name)
                 .or_else(|| self.global_types.get(name).cloned())
+                .map(|ty| {
+                    if matches!(ty, Type::Function(_, _)) {
+                        self.instantiate_type(&ty)
+                    } else {
+                        ty
+                    }
+                })
                 .ok_or_else(|| {
                     format!(
                         "Undefined variable '{}' at line {} col {}",
@@ -1443,62 +1653,172 @@ impl TypeChecker {
                     }
                 }
 
-                self.constraints.push(Constraint {
-                    left: f_ty,
-                    right: Type::Function(arg_types, Box::new(res_ty.clone())),
-                });
+                self.add_constraint(
+                    f_ty,
+                    Type::Function(arg_types, Box::new(res_ty.clone())),
+                    Some(span),
+                );
                 Ok(res_ty)
             }
             AstNode::BinaryOp {
-                left, op, right, ..
+                left,
+                op,
+                right,
+                span,
             } => {
                 let l_ty = self.collect(left, env)?;
                 let r_ty = self.collect(right, env)?;
 
                 if ["+", "-", "*", "/"].contains(&op.as_str()) {
-                    self.constraints.push(Constraint {
-                        left: l_ty.clone(),
-                        right: r_ty,
-                    });
+                    self.add_constraint(l_ty.clone(), r_ty, Some(span));
                     Ok(l_ty)
                 } else if ["%", "&", "|", "^", "<<", ">>"].contains(&op.as_str()) {
-                    self.constraints.push(Constraint {
-                        left: l_ty.clone(),
-                        right: r_ty,
-                    });
+                    self.add_constraint(l_ty.clone(), r_ty, Some(span));
                     Ok(l_ty)
                 } else if ["&&", "||"].contains(&op.as_str()) {
-                    self.constraints.push(Constraint {
-                        left: l_ty,
-                        right: Type::Primitive("bool".to_string()),
-                    });
-                    self.constraints.push(Constraint {
-                        left: r_ty,
-                        right: Type::Primitive("bool".to_string()),
-                    });
+                    self.add_constraint(l_ty, Type::Primitive("bool".to_string()), Some(span));
+                    self.add_constraint(r_ty, Type::Primitive("bool".to_string()), Some(span));
                     Ok(Type::Primitive("bool".to_string()))
                 } else if ["==", "!=", "<", ">", "<=", ">="].contains(&op.as_str()) {
-                    self.constraints.push(Constraint {
-                        left: l_ty,
-                        right: r_ty,
-                    });
+                    self.add_constraint(l_ty, r_ty, Some(span));
                     Ok(Type::Primitive("bool".to_string()))
                 } else if ["="].contains(&op.as_str()) {
-                    self.constraints.push(Constraint {
-                        left: l_ty.clone(),
-                        right: r_ty,
-                    });
+                    if !Self::is_assignable_target(left) {
+                        return Err(format!(
+                            "Invalid assignment target{}",
+                            Self::format_span(span)
+                        ));
+                    }
+                    self.add_constraint(l_ty.clone(), r_ty, Some(span));
                     Ok(l_ty)
                 } else if ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]
                     .contains(&op.as_str())
                 {
-                    self.constraints.push(Constraint {
-                        left: l_ty.clone(),
-                        right: r_ty,
-                    });
+                    if !Self::is_assignable_target(left) {
+                        return Err(format!(
+                            "Invalid assignment target{}",
+                            Self::format_span(span)
+                        ));
+                    }
+                    self.add_constraint(l_ty.clone(), r_ty, Some(span));
                     Ok(l_ty)
                 } else {
                     Ok(Type::Unit)
+                }
+            }
+            AstNode::UnaryOp { op, operand, span } => {
+                let operand_ty = self.collect(operand, env)?;
+                match op.as_str() {
+                    "!" => {
+                        self.add_constraint(
+                            operand_ty,
+                            Type::Primitive("bool".to_string()),
+                            Some(span),
+                        );
+                        Ok(Type::Primitive("bool".to_string()))
+                    }
+                    "-" => {
+                        let numeric_ok = matches!(
+                            operand_ty,
+                            Type::Primitive(ref n)
+                                if n == "i8"
+                                    || n == "i16"
+                                    || n == "i32"
+                                    || n == "i64"
+                                    || n == "i128"
+                                    || n == "isize"
+                                    || n == "u8"
+                                    || n == "u16"
+                                    || n == "u32"
+                                    || n == "u64"
+                                    || n == "u128"
+                                    || n == "usize"
+                                    || n == "f32"
+                                    || n == "f64"
+                        ) || matches!(operand_ty, Type::Variable(_));
+                        if !numeric_ok {
+                            return Err(format!(
+                                "Unary '-' requires numeric operand, got {:?}{}",
+                                operand_ty,
+                                Self::format_span(span)
+                            ));
+                        }
+                        Ok(operand_ty)
+                    }
+                    "+" => {
+                        let numeric_ok = matches!(
+                            operand_ty,
+                            Type::Primitive(ref n)
+                                if n == "i8"
+                                    || n == "i16"
+                                    || n == "i32"
+                                    || n == "i64"
+                                    || n == "i128"
+                                    || n == "isize"
+                                    || n == "u8"
+                                    || n == "u16"
+                                    || n == "u32"
+                                    || n == "u64"
+                                    || n == "u128"
+                                    || n == "usize"
+                                    || n == "f32"
+                                    || n == "f64"
+                        ) || matches!(operand_ty, Type::Variable(_));
+                        if !numeric_ok {
+                            return Err(format!(
+                                "Unary '+' requires numeric operand, got {:?}{}",
+                                operand_ty,
+                                Self::format_span(span)
+                            ));
+                        }
+                        Ok(operand_ty)
+                    }
+                    "~" => {
+                        let integral_ok = matches!(
+                            operand_ty,
+                            Type::Primitive(ref n)
+                                if n == "i8"
+                                    || n == "i16"
+                                    || n == "i32"
+                                    || n == "i64"
+                                    || n == "i128"
+                                    || n == "isize"
+                                    || n == "u8"
+                                    || n == "u16"
+                                    || n == "u32"
+                                    || n == "u64"
+                                    || n == "u128"
+                                    || n == "usize"
+                        ) || matches!(operand_ty, Type::Variable(_));
+                        if !integral_ok {
+                            return Err(format!(
+                                "Unary '~' requires integral operand, got {:?}{}",
+                                operand_ty,
+                                Self::format_span(span)
+                            ));
+                        }
+                        Ok(operand_ty)
+                    }
+                    "&" => Ok(Type::Reference(Box::new(operand_ty), false)),
+                    "&mut" => Ok(Type::Reference(Box::new(operand_ty), true)),
+                    "*" => match operand_ty {
+                        Type::Reference(inner, _) => Ok(*inner),
+                        Type::Variable(_) => {
+                            let inner = self.fresh_type_var();
+                            self.add_constraint(
+                                operand_ty,
+                                Type::Reference(Box::new(inner.clone()), false),
+                                Some(span),
+                            );
+                            Ok(inner)
+                        }
+                        _ => Err(format!(
+                            "Unary '*' requires reference operand, got {:?}{}",
+                            operand_ty,
+                            Self::format_span(span)
+                        )),
+                    },
+                    _ => Ok(Type::Unit),
                 }
             }
             AstNode::TryOp { expr, span } => {
@@ -1520,21 +1840,15 @@ impl TypeChecker {
                 condition,
                 then_body,
                 else_body,
-                ..
+                span,
             } => {
                 let cond_ty = self.collect(condition, env)?;
-                self.constraints.push(Constraint {
-                    left: cond_ty,
-                    right: Type::Primitive("bool".to_string()),
-                });
+                self.add_constraint(cond_ty, Type::Primitive("bool".to_string()), Some(span));
 
                 let then_ty = self.collect(then_body, env)?;
                 if let Some(else_b) = else_body {
                     let else_ty = self.collect(else_b, env)?;
-                    self.constraints.push(Constraint {
-                        left: then_ty.clone(),
-                        right: else_ty,
-                    });
+                    self.add_constraint(then_ty.clone(), else_ty, Some(span));
                     Ok(then_ty)
                 } else {
                     Ok(Type::Unit)
@@ -1556,22 +1870,13 @@ impl TypeChecker {
                 let res_ty = self.fresh_type_var();
                 for arm in arms {
                     let p_ty = self.collect_pattern(&arm.pattern, env)?;
-                    self.constraints.push(Constraint {
-                        left: s_ty.clone(),
-                        right: p_ty,
-                    });
+                    self.add_constraint(s_ty.clone(), p_ty, Some(span));
                     if let Some(guard) = &arm.guard {
                         let g_ty = self.collect(guard, env)?;
-                        self.constraints.push(Constraint {
-                            left: g_ty,
-                            right: Type::Primitive("bool".to_string()),
-                        });
+                        self.add_constraint(g_ty, Type::Primitive("bool".to_string()), Some(span));
                     }
                     let b_ty = self.collect(&arm.body, env)?;
-                    self.constraints.push(Constraint {
-                        left: res_ty.clone(),
-                        right: b_ty,
-                    });
+                    self.add_constraint(res_ty.clone(), b_ty, Some(span));
                 }
                 self.ensure_match_exhaustive(&s_ty, arms, span)?;
                 Ok(res_ty)
@@ -1580,6 +1885,7 @@ impl TypeChecker {
                 params,
                 return_type,
                 body,
+                span,
                 ..
             } => {
                 let mut local_env = env.clone().extend();
@@ -1592,10 +1898,7 @@ impl TypeChecker {
 
                 let body_ty = self.collect(body, &mut local_env)?;
                 let ret_ty = if let Some(declared_ret) = return_type {
-                    self.constraints.push(Constraint {
-                        left: body_ty.clone(),
-                        right: declared_ret.clone(),
-                    });
+                    self.add_constraint(body_ty.clone(), declared_ret.clone(), Some(span));
                     declared_ret.clone()
                 } else {
                     body_ty
@@ -1638,10 +1941,7 @@ impl TypeChecker {
                                 )
                             })?;
 
-                        self.constraints.push(Constraint {
-                            left: f_expr_ty,
-                            right: def_f_ty.clone(),
-                        });
+                        self.add_constraint(f_expr_ty, def_f_ty.clone(), Some(span));
                     }
 
                     let missing: Vec<String> = def_fields
@@ -1671,17 +1971,14 @@ impl TypeChecker {
                     ))
                 }
             }
-            AstNode::ArrayLiteral(items, _) => {
+            AstNode::ArrayLiteral(items, span) => {
                 if items.is_empty() {
                     return Ok(Type::Generic("Vec".to_string(), vec![self.fresh_type_var()]));
                 }
                 let first_ty = self.collect(&items[0], env)?;
                 for item in &items[1..] {
                     let ty = self.collect(item, env)?;
-                    self.constraints.push(Constraint {
-                        left: first_ty.clone(),
-                        right: ty,
-                    });
+                    self.add_constraint(first_ty.clone(), ty, Some(span));
                 }
                 Ok(Type::Generic("Vec".to_string(), vec![first_ty]))
             }
@@ -1717,10 +2014,7 @@ impl TypeChecker {
             } => {
                 let obj_ty = self.collect(object, env)?;
                 let idx_ty = self.collect(index, env)?;
-                self.constraints.push(Constraint {
-                    left: idx_ty,
-                    right: Type::Primitive("i32".to_string()),
-                });
+                self.add_constraint(idx_ty, Type::Primitive("i32".to_string()), Some(span));
                 match obj_ty {
                     Type::Generic(name, args) if name == "Vec" && args.len() == 1 => {
                         Ok(args[0].clone())
@@ -1766,10 +2060,7 @@ impl TypeChecker {
                 match t_ty {
                     Type::Actor(actor_name) => {
                         if let Some(expected_msg_ty) = self.actor_message_types.get(&actor_name).cloned() {
-                            self.constraints.push(Constraint {
-                                left: m_ty,
-                                right: expected_msg_ty,
-                            });
+                            self.add_constraint(m_ty, expected_msg_ty, Some(span));
                         }
                         Ok(Type::Unit)
                     }
@@ -1780,22 +2071,16 @@ impl TypeChecker {
                     )),
                 }
             }
-            AstNode::Receive { arms, .. } => {
+            AstNode::Receive { arms, span } => {
                 let res_ty = self.fresh_type_var();
                 for arm in arms {
                     let _p_ty = self.collect_pattern(&arm.pattern, env)?;
                     if let Some(guard) = &arm.guard {
                         let g_ty = self.collect(guard, env)?;
-                        self.constraints.push(Constraint {
-                            left: g_ty,
-                            right: Type::Primitive("bool".to_string()),
-                        });
+                        self.add_constraint(g_ty, Type::Primitive("bool".to_string()), Some(span));
                     }
                     let b_ty = self.collect(&arm.body, env)?;
-                    self.constraints.push(Constraint {
-                        left: res_ty.clone(),
-                        right: b_ty,
-                    });
+                    self.add_constraint(res_ty.clone(), b_ty, Some(span));
                 }
                 Ok(res_ty)
             }
@@ -1840,10 +2125,7 @@ impl TypeChecker {
                 let mut penv = env.clone().extend();
                 let p_ty = self.collect_pattern(&arm.pattern, &mut penv)?;
                 if let Some(prev) = &found {
-                    self.constraints.push(Constraint {
-                        left: prev.clone(),
-                        right: p_ty.clone(),
-                    });
+                    self.add_constraint(prev.clone(), p_ty.clone(), None);
                 } else {
                     found = Some(p_ty.clone());
                 }
@@ -1866,10 +2148,7 @@ impl TypeChecker {
                 let first_ty = self.collect_pattern(&patterns[0], env)?;
                 for pat in &patterns[1..] {
                     let ty = self.collect_pattern(pat, env)?;
-                    self.constraints.push(Constraint {
-                        left: first_ty.clone(),
-                        right: ty,
-                    });
+                    self.add_constraint(first_ty.clone(), ty, None);
                 }
                 Ok(first_ty)
             }
@@ -1992,6 +2271,16 @@ impl TypeChecker {
                 }
                 return Err(format!(
                     "Non-exhaustive match for struct {} at line {} col {}",
+                    name, span.line, span.col
+                ));
+            }
+
+            let has_wildcard = arms.iter().any(|arm| {
+                arm.guard.is_none() && Self::pattern_has_wildcard(&arm.pattern)
+            });
+            if !has_wildcard {
+                return Err(format!(
+                    "Non-exhaustive match for non-finite struct {} at line {} col {}: requires wildcard arm",
                     name, span.line, span.col
                 ));
             }
@@ -2148,13 +2437,18 @@ impl TypeChecker {
     }
 
     fn finite_domain_for_type_ctx(&self, ty: &Type) -> Option<Vec<String>> {
-        self.finite_domain_for_type_ctx_seen(ty, &mut HashSet::new())
+        self.finite_domain_for_type_ctx_seen(
+            ty,
+            &mut HashSet::new(),
+            Self::RECURSIVE_ENUM_UNFOLD_DEPTH,
+        )
     }
 
     fn finite_domain_for_type_ctx_seen(
         &self,
         ty: &Type,
         visiting: &mut HashSet<String>,
+        unfold_budget: usize,
     ) -> Option<Vec<String>> {
         if ty == &Type::Primitive("bool".to_string()) {
             return Some(vec!["false".to_string(), "true".to_string()]);
@@ -2164,14 +2458,21 @@ impl TypeChecker {
                 return Some(vec!["false".to_string(), "true".to_string()]);
             }
             if self.enum_variants.contains_key(name) {
-                return self.finite_domain_for_enum(name, visiting);
+                return self.finite_domain_for_enum(name, visiting, unfold_budget);
             }
             if let Some(mapped) = self.global_types.get(name) {
                 if mapped != ty {
                     if !visiting.insert(name.clone()) {
+                        if unfold_budget > 0 {
+                            return self.finite_domain_for_type_ctx_seen(
+                                mapped,
+                                visiting,
+                                unfold_budget - 1,
+                            );
+                        }
                         return Some(vec![Self::RECURSIVE_DOMAIN_WILDCARD.to_string()]);
                     }
-                    let out = self.finite_domain_for_type_ctx_seen(mapped, visiting);
+                    let out = self.finite_domain_for_type_ctx_seen(mapped, visiting, unfold_budget);
                     visiting.remove(name);
                     return out;
                 }
@@ -2179,13 +2480,13 @@ impl TypeChecker {
         }
         if let Type::Primitive(enum_name) = ty {
             if self.enum_variants.contains_key(enum_name) {
-                return self.finite_domain_for_enum(enum_name, visiting);
+                return self.finite_domain_for_enum(enum_name, visiting, unfold_budget);
             }
         }
         if let Type::Tuple(items) = ty {
             let mut domains = Vec::new();
             for item in items {
-                domains.push(self.finite_domain_for_type_ctx_seen(item, visiting)?);
+                domains.push(self.finite_domain_for_type_ctx_seen(item, visiting, unfold_budget)?);
             }
             let mut out = Vec::new();
             Self::cross_product_domains(&domains, 0, &mut Vec::new(), &mut out);
@@ -2209,7 +2510,11 @@ impl TypeChecker {
             let mut field_names = Vec::new();
             for (field, field_ty) in fields {
                 field_names.push(field.clone());
-                domains.push(self.finite_domain_for_type_ctx_seen(field_ty, visiting)?);
+                domains.push(self.finite_domain_for_type_ctx_seen(
+                    field_ty,
+                    visiting,
+                    unfold_budget,
+                )?);
             }
             let mut out = Vec::new();
             Self::cross_product_domains(&domains, 0, &mut Vec::new(), &mut out);
@@ -2234,33 +2539,59 @@ impl TypeChecker {
         &self,
         enum_name: &str,
         visiting: &mut HashSet<String>,
+        unfold_budget: usize,
     ) -> Option<Vec<String>> {
         let variants = self.enum_variants.get(enum_name)?;
         if !visiting.insert(enum_name.to_string()) {
-            return Some(
-                variants
-                    .iter()
-                    .map(|variant| {
-                        let has_payload = self
-                            .enum_variant_payloads
-                            .get(enum_name)
-                            .and_then(|m| m.get(variant))
-                            .cloned()
-                            .flatten()
-                            .is_some();
-                        if has_payload {
-                            format!(
-                                "{}::{}({})",
-                                enum_name,
-                                variant,
-                                Self::RECURSIVE_DOMAIN_WILDCARD
-                            )
-                        } else {
-                            format!("{}::{}", enum_name, variant)
-                        }
-                    })
-                    .collect(),
-            );
+            if unfold_budget == 0 {
+                return Some(
+                    variants
+                        .iter()
+                        .map(|variant| {
+                            let has_payload = self
+                                .enum_variant_payloads
+                                .get(enum_name)
+                                .and_then(|m| m.get(variant))
+                                .cloned()
+                                .flatten()
+                                .is_some();
+                            if has_payload {
+                                format!(
+                                    "{}::{}({})",
+                                    enum_name,
+                                    variant,
+                                    Self::RECURSIVE_DOMAIN_WILDCARD
+                                )
+                            } else {
+                                format!("{}::{}", enum_name, variant)
+                            }
+                        })
+                        .collect(),
+                );
+            }
+
+            let mut out = Vec::new();
+            for variant in variants {
+                let payload_ty = self
+                    .enum_variant_payloads
+                    .get(enum_name)
+                    .and_then(|m| m.get(variant))
+                    .cloned()
+                    .flatten();
+                if let Some(payload_ty) = payload_ty {
+                    let payload_domain = self.finite_domain_for_type_ctx_seen(
+                        &payload_ty,
+                        visiting,
+                        unfold_budget - 1,
+                    )?;
+                    for payload_value in payload_domain {
+                        out.push(format!("{}::{}({})", enum_name, variant, payload_value));
+                    }
+                } else {
+                    out.push(format!("{}::{}", enum_name, variant));
+                }
+            }
+            return Some(out);
         }
         let mut out = Vec::new();
         for variant in variants {
@@ -2271,7 +2602,8 @@ impl TypeChecker {
                 .cloned()
                 .flatten();
             if let Some(payload_ty) = payload_ty {
-                let payload_domain = self.finite_domain_for_type_ctx_seen(&payload_ty, visiting)?;
+                let payload_domain =
+                    self.finite_domain_for_type_ctx_seen(&payload_ty, visiting, unfold_budget)?;
                 for payload_value in payload_domain {
                     out.push(format!("{}::{}({})", enum_name, variant, payload_value));
                 }
@@ -2671,34 +3003,70 @@ impl TypeChecker {
             match (left, right) {
                 (Type::Variable(name), ty) | (ty, Type::Variable(name)) => {
                     if self.occurs_check(&name, &ty) {
-                        return Err(format!("Recursive type detected for {}", name));
+                        return Err(Self::with_optional_span(
+                            format!("Recursive type detected for {}", name),
+                            constraint.span.as_ref(),
+                        ));
                     }
                     substitution.insert(name, ty);
                 }
                 (Type::Primitive(p1), Type::Primitive(p2)) if p1 == p2 => {}
                 (Type::Function(p1, r1), Type::Function(p2, r2)) => {
                     if p1.len() != p2.len() {
-                        return Err("Param count mismatch".to_string());
+                        return Err(Self::with_optional_span(
+                            "Param count mismatch".to_string(),
+                            constraint.span.as_ref(),
+                        ));
                     }
                     for (a, b) in p1.into_iter().zip(p2.into_iter()) {
-                        constraints.push(Constraint { left: a, right: b });
+                        constraints.push(Constraint {
+                            left: a,
+                            right: b,
+                            span: constraint.span.clone(),
+                        });
                     }
                     constraints.push(Constraint {
                         left: *r1,
                         right: *r2,
+                        span: constraint.span.clone(),
                     });
                 }
                 (Type::Tuple(t1), Type::Tuple(t2)) => {
                     if t1.len() != t2.len() {
-                        return Err("Tuple length mismatch".to_string());
+                        return Err(Self::with_optional_span(
+                            "Tuple length mismatch".to_string(),
+                            constraint.span.as_ref(),
+                        ));
                     }
                     for (a, b) in t1.into_iter().zip(t2.into_iter()) {
-                        constraints.push(Constraint { left: a, right: b });
+                        constraints.push(Constraint {
+                            left: a,
+                            right: b,
+                            span: constraint.span.clone(),
+                        });
                     }
                 }
                 (Type::Struct(n1, _), Type::Struct(n2, _)) if n1 == n2 => {}
+                (Type::Reference(i1, m1), Type::Reference(i2, m2)) => {
+                    if m1 != m2 {
+                        return Err(Self::with_optional_span(
+                            "Reference mutability mismatch".to_string(),
+                            constraint.span.as_ref(),
+                        ));
+                    }
+                    constraints.push(Constraint {
+                        left: *i1,
+                        right: *i2,
+                        span: constraint.span.clone(),
+                    });
+                }
 
-                (l, r) => return Err(format!("Type mismatch: {:?} vs {:?}", l, r)),
+                (l, r) => {
+                    return Err(Self::with_optional_span(
+                        format!("Type mismatch: {:?} vs {:?}", l, r),
+                        constraint.span.as_ref(),
+                    ))
+                }
             }
         }
         Ok(())
@@ -2724,6 +3092,9 @@ impl TypeChecker {
             Type::Tuple(items) => {
                 Type::Tuple(items.iter().map(|t| self.apply_subst(t, substitution)).collect())
             }
+            Type::Reference(inner, m) => {
+                Type::Reference(Box::new(self.apply_subst(inner, substitution)), *m)
+            }
             _ => ty.clone(),
         }
     }
@@ -2735,6 +3106,7 @@ impl TypeChecker {
                 params.iter().any(|p| self.occurs_check(var, p)) || self.occurs_check(var, ret)
             }
             Type::Tuple(items) => items.iter().any(|t| self.occurs_check(var, t)),
+            Type::Reference(inner, _) => self.occurs_check(var, inner),
             _ => false,
         }
     }

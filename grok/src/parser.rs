@@ -1,7 +1,7 @@
 use crate::ast::{AstNode, MatchArm, Param, Pattern, Span, Type};
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_while, take_while1},
+    bytes::complete::{escaped_transform, is_not, tag, take_while, take_while1},
     character::complete::{char, digit1},
     combinator::{map, not, opt, value},
     multi::{many0, separated_list0, separated_list1},
@@ -147,20 +147,41 @@ fn int_literal(input: Input) -> IResult<Input, i64> {
 }
 
 fn string_literal(input: Input) -> IResult<Input, String> {
-    map(
-        delimited(
-            char('"'),
-            take_while(|c: char| c != '"' && c != '\n'),
-            char('"'),
+    delimited(
+        char('"'),
+        escaped_transform(
+            is_not("\\\"\n"),
+            '\\',
+            alt((
+                value("\\", tag("\\")),
+                value("\"", tag("\"")),
+                value("\n", tag("n")),
+                value("\r", tag("r")),
+                value("\t", tag("t")),
+                value("\0", tag("0")),
+            )),
         ),
-        |s: Input| s.to_string(),
+        char('"'),
     )(input)
 }
 
 fn char_literal(input: Input) -> IResult<Input, char> {
     delimited(
         char('\''),
-        nom::character::complete::none_of("'\n"),
+        alt((
+            nom::character::complete::none_of("\\'\n"),
+            preceded(
+                char('\\'),
+                alt((
+                    value('\\', char('\\')),
+                    value('\'', char('\'')),
+                    value('\n', char('n')),
+                    value('\r', char('r')),
+                    value('\t', char('t')),
+                    value('\0', char('0')),
+                )),
+            ),
+        )),
         char('\''),
     )(input)
 }
@@ -185,11 +206,22 @@ fn byte_string_literal(input: Input) -> IResult<Input, Vec<u8>> {
             char('b'),
             delimited(
                 char('"'),
-                take_while(|c: char| c != '"' && c != '\n'),
+                escaped_transform(
+                    is_not("\\\"\n"),
+                    '\\',
+                    alt((
+                        value("\\", tag("\\")),
+                        value("\"", tag("\"")),
+                        value("\n", tag("n")),
+                        value("\r", tag("r")),
+                        value("\t", tag("t")),
+                        value("\0", tag("0")),
+                    )),
+                ),
                 char('"'),
             ),
         ),
-        |s: Input| s.fragment().as_bytes().to_vec(),
+        |s: String| s.into_bytes(),
     )(input)
 }
 
@@ -330,6 +362,7 @@ fn function_def(input: Input) -> IResult<Input, AstNode> {
     let start_span = span_from(input);
     map(
         tuple((
+            opt(ws(tag("pub"))),
             tag("fn"),
             ws(identifier),
             delimited(char('('), separated_list0(char(','), ws(param)), char(')')),
@@ -340,8 +373,11 @@ fn function_def(input: Input) -> IResult<Input, AstNode> {
             opt(preceded(ws(tag("where")), ws(where_clause))),
             ws(block),
         )),
-        move |(_, name, params, ret_type, where_bounds, body)| {
+        move |(pub_kw, _, name, params, ret_type, where_bounds, body)| {
             let mut decorators = Vec::new();
+            if pub_kw.is_some() {
+                decorators.push("__pub".to_string());
+            }
             if let Some(bounds) = where_bounds {
                 for (type_var, traits) in bounds {
                     decorators.push(format!("__where:{}:{}", type_var, traits.join("+")));
@@ -1038,7 +1074,15 @@ fn unary_expr(input: Input) -> IResult<Input, AstNode> {
     alt((
         map(
             tuple((
-                ws(alt((tag("&mut"), tag("&"), tag("*"), tag("!"), tag("-")))),
+                ws(alt((
+                    tag("&mut"),
+                    tag("&"),
+                    tag("*"),
+                    tag("!"),
+                    tag("-"),
+                    tag("+"),
+                    tag("~"),
+                ))),
                 unary_expr,
             )),
             move |(op, expr)| AstNode::UnaryOp {
@@ -1289,13 +1333,11 @@ fn type_annotation(input: Input) -> IResult<Input, Type> {
             )),
             |(name, args)| Type::Generic(name, args),
         ),
-        map(tag("i32"), |_| Type::Primitive("i32".to_string())),
-        map(tag("i64"), |_| Type::Primitive("i64".to_string())),
-        map(tag("f32"), |_| Type::Primitive("f32".to_string())),
-        map(tag("f64"), |_| Type::Primitive("f64".to_string())),
-        map(tag("char"), |_| Type::Primitive("char".to_string())),
-        map(tag("bool"), |_| Type::Primitive("bool".to_string())),
-        map(tag("String"), |_| Type::Primitive("String".to_string())),
-        map(identifier, |id| Type::Variable(id)),
+        map(identifier, |id| match id.as_str() {
+            "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32"
+            | "u64" | "u128" | "usize" | "f32" | "f64" | "char" | "bool" | "str"
+            | "String" => Type::Primitive(id),
+            _ => Type::Variable(id),
+        }),
     ))(input)
 }

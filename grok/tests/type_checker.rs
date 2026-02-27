@@ -41,6 +41,26 @@ mod tests {
         let result = checker.check(&ast);
         assert!(result.is_ok(), "char literal should type-check");
     }
+
+    #[test]
+    fn test_byte_string_literal_type_checks_as_vec_u8() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse("fn main() { let bs: Vec<u8> = b\"hi\"; }")
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_ok(), "byte string should type-check as Vec<u8>");
+    }
+
+    #[test]
+    fn test_byte_string_literal_type_mismatch_fails() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let s: str = b\"hi\"; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_err(), "byte string should not type-check as str");
+    }
     #[test]
     fn test_type_check_struct() {
         let mut checker = TypeChecker::new();
@@ -176,6 +196,107 @@ mod tests {
         let mut checker = TypeChecker::new();
         let result = checker.check(&ast);
         assert!(result.is_err(), "logical operators must be bool-only");
+    }
+
+    #[test]
+    fn test_unary_not_requires_bool() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let x = !1; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_err(), "unary ! should require bool operand");
+    }
+
+    #[test]
+    fn test_unary_not_bool_passes() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let x: bool = !true; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_ok(), "unary ! on bool should type-check");
+    }
+
+    #[test]
+    fn test_unary_minus_non_numeric_fails() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let x = -true; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_err(), "unary - should reject non-numeric operand");
+    }
+
+    #[test]
+    fn test_unary_plus_numeric_passes() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let x: i32 = +1; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_ok(), "unary + should type-check on numeric operands");
+    }
+
+    #[test]
+    fn test_unary_plus_non_numeric_fails() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let x = +true; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_err(), "unary + should reject non-numeric operands");
+    }
+
+    #[test]
+    fn test_reference_and_deref_type_checks() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse("fn main() { let x: i32 = 1; let r: &i32 = &x; let y: i32 = *r; }")
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(
+            result.is_ok(),
+            "reference and dereference should type-check for matching types"
+        );
+    }
+
+    #[test]
+    fn test_deref_non_reference_fails() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let y = *1; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_err(), "deref should fail on non-reference operand");
+    }
+
+    #[test]
+    fn test_unary_bitwise_not_integral_passes() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let x: i32 = ~1; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_ok(), "unary ~ should type-check on integral types");
+    }
+
+    #[test]
+    fn test_unary_bitwise_not_non_integral_fails() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let x = ~true; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(result.is_err(), "unary ~ should reject non-integral operands");
+    }
+
+    #[test]
+    fn test_invalid_assignment_target_fails_with_position() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { 1 = 2; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let err = checker
+            .check(&ast)
+            .expect_err("assignment to non-lvalue should fail");
+        assert!(
+            err.contains("Invalid assignment target") && err.contains("line") && err.contains("col"),
+            "invalid assignment target should include line/col, got: {}",
+            err
+        );
     }
 
     #[test]
@@ -450,7 +571,7 @@ mod tests {
     fn test_use_internal_symbol_resolution_passes() {
         let parser = Parser::new();
         let ast = parser
-            .parse("mod m { fn f() {} } use m::f; fn main() { return; }")
+            .parse("mod m { pub fn f() {} } use m::f; fn main() { return; }")
             .unwrap();
         let mut checker = TypeChecker::new();
         let result = checker.check(&ast);
@@ -481,7 +602,7 @@ mod tests {
     fn test_use_alias_imported_function_call_passes() {
         let parser = Parser::new();
         let ast = parser
-            .parse("mod m { fn f() -> i32 { 1 } } use m::f as g; fn main() -> i32 { g() }")
+            .parse("mod m { pub fn f() -> i32 { 1 } } use m::f as g; fn main() -> i32 { g() }")
             .unwrap();
         let mut checker = TypeChecker::new();
         let result = checker.check(&ast);
@@ -492,16 +613,78 @@ mod tests {
     }
 
     #[test]
+    fn test_use_private_function_import_fails_with_position() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse("mod m { fn f() -> i32 { 1 } } use m::f; fn main() -> i32 { f() }")
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let err = checker
+            .check(&ast)
+            .expect_err("importing private module function should fail");
+        assert!(
+            err.contains("private") && err.contains("line") && err.contains("col"),
+            "private import error should include line/col, got: {}",
+            err
+        );
+    }
+
+    #[test]
     fn test_use_group_alias_imported_functions_pass() {
         let parser = Parser::new();
         let ast = parser
-            .parse("mod m { fn f() -> i32 { 1 } fn h() -> i32 { 2 } } use m::{f as g, h}; fn main() -> i32 { g() + h() }")
+            .parse("mod m { pub fn f() -> i32 { 1 } pub fn h() -> i32 { 2 } } use m::{f as g, h}; fn main() -> i32 { g() + h() }")
             .unwrap();
         let mut checker = TypeChecker::new();
         let result = checker.check(&ast);
         assert!(
             result.is_ok(),
             "grouped alias imports should bind function names into type checker globals"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_module_definition_fails_with_position() {
+        let parser = Parser::new();
+        let ast = parser.parse("mod m {} mod m {} fn main() { return; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let err = checker
+            .check(&ast)
+            .expect_err("duplicate module definition should fail");
+        assert!(
+            err.contains("Duplicate module definition") && err.contains("line") && err.contains("col"),
+            "duplicate module definition should include line/col, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_duplicate_module_declaration_fails_with_position() {
+        let parser = Parser::new();
+        let ast = parser.parse("mod m; mod m; fn main() { return; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let err = checker
+            .check(&ast)
+            .expect_err("duplicate module declaration should fail");
+        assert!(
+            err.contains("Duplicate module declaration") && err.contains("line") && err.contains("col"),
+            "duplicate module declaration should include line/col, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_module_decl_and_def_conflict_fails_with_position() {
+        let parser = Parser::new();
+        let ast = parser.parse("mod m; mod m {} fn main() { return; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let err = checker
+            .check(&ast)
+            .expect_err("module declaration+definition conflict should fail");
+        assert!(
+            err.contains("both declaration and definition") && err.contains("line") && err.contains("col"),
+            "module declaration+definition conflict should include line/col, got: {}",
+            err
         );
     }
 
@@ -582,6 +765,20 @@ mod tests {
         assert!(
             result.is_ok(),
             "polymorphic function should instantiate independently per call"
+        );
+    }
+
+    #[test]
+    fn test_let_polymorphic_closure_calls_independent_instantiation() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse("fn main() { let id = |x| x; let a: i32 = id(1); let b: bool = id(true); }")
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(
+            result.is_ok(),
+            "let-bound closure should instantiate independently per call"
         );
     }
 
@@ -794,6 +991,38 @@ mod tests {
     }
 
     #[test]
+    fn test_where_bound_satisfied_via_blanket_impl_passes() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse(
+                "trait Show { fn show() {} } trait Marker { fn mark() {} } impl Show for i32 { fn show() {} } impl<T: Show> Marker for T { fn mark() {} } fn needs_marker(x: X) where X: Marker { return; } fn main() { needs_marker(1); }",
+            )
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(
+            result.is_ok(),
+            "blanket impl should satisfy where-bound when required bound is met"
+        );
+    }
+
+    #[test]
+    fn test_where_bound_blanket_impl_fails_when_required_bound_missing() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse(
+                "trait Show { fn show() {} } trait Marker { fn mark() {} } impl Show for i32 { fn show() {} } impl<T: Show> Marker for T { fn mark() {} } fn needs_marker(x: X) where X: Marker { return; } fn main() { needs_marker(true); }",
+            )
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(
+            result.is_err(),
+            "blanket impl should fail where-bound when required bound is missing"
+        );
+    }
+
+    #[test]
     fn test_enum_payload_tuple_bool_match_exhaustive_passes() {
         let parser = Parser::new();
         let ast = parser
@@ -986,6 +1215,38 @@ mod tests {
     }
 
     #[test]
+    fn test_recursive_enum_deeper_nested_split_exhaustive_passes() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse(
+                "enum Nat { Z, S(Nat) } fn main(n: Nat) { match n { Nat::Z => 0, Nat::S(Nat::Z) => 1, Nat::S(Nat::S(Nat::Z)) => 2, Nat::S(Nat::S(Nat::S(_))) => 3 } }",
+            )
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(
+            result.is_ok(),
+            "deeper recursive nested split should be recognized as exhaustive"
+        );
+    }
+
+    #[test]
+    fn test_recursive_enum_deeper_nested_split_non_exhaustive_fails() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse(
+                "enum Nat { Z, S(Nat) } fn main(n: Nat) { match n { Nat::Z => 0, Nat::S(Nat::Z) => 1, Nat::S(Nat::S(Nat::S(_))) => 3 } }",
+            )
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(
+            result.is_err(),
+            "deeper recursive nested split should fail when an unfolded branch is missing"
+        );
+    }
+
+    #[test]
     fn test_recursive_payload_with_finite_bool_decomposition_passes() {
         let parser = Parser::new();
         let ast = parser
@@ -1046,6 +1307,38 @@ mod tests {
         assert!(
             result.is_err(),
             "recursive struct decomposition over finite bool field should fail when a branch is missing"
+        );
+    }
+
+    #[test]
+    fn test_non_finite_recursive_struct_requires_wildcard_fails() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse(
+                "struct Node { next: Node, v: i32 } fn main(n: Node) { match n { Node { v: 1, next: _ } => 1 } }",
+            )
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(
+            result.is_err(),
+            "non-finite recursive struct should require wildcard arm for exhaustiveness"
+        );
+    }
+
+    #[test]
+    fn test_non_finite_recursive_struct_with_wildcard_passes() {
+        let parser = Parser::new();
+        let ast = parser
+            .parse(
+                "struct Node { next: Node, v: i32 } fn main(n: Node) { match n { Node { v: 1, next: _ } => 1, _ => 0 } }",
+            )
+            .unwrap();
+        let mut checker = TypeChecker::new();
+        let result = checker.check(&ast);
+        assert!(
+            result.is_ok(),
+            "non-finite recursive struct should pass with wildcard arm"
         );
     }
 
@@ -1376,10 +1669,13 @@ mod tests {
             )
             .unwrap();
         let mut checker = TypeChecker::new();
-        let result = checker.check(&ast);
+        let err = checker
+            .check(&ast)
+            .expect_err("trait impl param type mismatch should fail");
         assert!(
-            result.is_err(),
-            "trait impl param type mismatch should fail"
+            err.contains("line") && err.contains("col"),
+            "impl signature mismatch should include line/col, got: {}",
+            err
         );
     }
 
@@ -1435,6 +1731,24 @@ mod tests {
         assert!(
             err.contains(" col "),
             "error should include col info: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_unify_type_mismatch_error_contains_line_col() {
+        let parser = Parser::new();
+        let ast = parser.parse("fn main() { let x: bool = 1; }").unwrap();
+        let mut checker = TypeChecker::new();
+        let err = checker.check(&ast).expect_err("should fail");
+        assert!(
+            err.contains("Type mismatch"),
+            "expected type mismatch error, got: {}",
+            err
+        );
+        assert!(
+            err.contains("line ") && err.contains(" col "),
+            "type mismatch error should include line/col, got: {}",
             err
         );
     }

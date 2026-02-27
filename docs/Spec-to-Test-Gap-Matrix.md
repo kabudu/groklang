@@ -13,25 +13,25 @@ Status legend:
 | Spec area | Status | Evidence (impl/tests) | Gap to close |
 |---|---|---|---|
 | Identifier rules (`letter { letter | digit | underscore }`) | DONE | `grok/src/parser.rs`, `grok/tests/parser.rs` | Add more negative tests for invalid starts/hyphens. |
-| Arithmetic/comparison/logical precedence | PARTIAL | `grok/src/parser.rs`, `grok/tests/parser.rs` | Assignment semantics and full operator set still need spec-complete behavior. |
-| Literals: int/float/string/byte string/bool | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Raw/prefixed ints, typed numeric suffixes, char literals, and tuple type annotations are supported; richer escape handling and additional literal categories remain. |
-| Function/struct/enum/trait/actor definitions | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Impl blocks, trait bounds, function where-clauses, richer use/module forms (grouped, glob, module declaration), and internal use alias/group/glob name materialization for checker resolution are supported; full module visibility/export semantics remain pending. |
-| Match expressions/arms/guards | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Or-pattern parsing is implemented; bool/enum plus finite tuple/struct/payload-sensitive coverage (including nested finite enum payload decomposition, recursive payload/struct finite-subdomain decomposition, and nested recursive-enum skeleton splitting) exists, with guarded arms excluded from coverage; broader general recursive coverage remains. |
+| Arithmetic/comparison/logical precedence | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Assignment semantics and full operator set still need spec-complete behavior; unary logical-not/numeric-negation/bitwise-not/plus, assignment-target validity checks, and reference/deref unary semantics are now validated in parser/checker coverage. |
+| Literals: int/float/string/byte string/bool | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Raw/prefixed ints, typed numeric suffixes, char literals, byte-string literal typing (`Vec<u8>`), expanded primitive type annotation parsing (including `str` and full int-width primitives), and escaped string/byte-string/char parsing are supported; additional literal categories remain. |
+| Function/struct/enum/trait/actor definitions | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Impl blocks, trait bounds, function where-clauses, richer use/module forms (grouped, glob, module declaration), internal use alias/group/glob name materialization for checker resolution, module declaration/definition coherence checks, and `pub fn` visibility-gated module imports are supported; full module visibility/export semantics remain pending. |
+| Match expressions/arms/guards | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Or-pattern parsing is implemented; bool/enum plus finite tuple/struct/payload-sensitive coverage (including nested finite enum payload decomposition, recursive payload/struct finite-subdomain decomposition, nested recursive-enum skeleton splitting, and bounded deeper recursive-enum unfolding for nested splits) exists, with guarded arms excluded from coverage; broader general recursive coverage remains. |
 | Concurrency syntax (`spawn`, `receive`, send) | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser_actor.rs`, `grok/tests/type_checker_actor.rs` | Send/receive parsing is in and actor send message typing is enforced from receive-pattern inference; richer actor protocol/API semantics remain. |
 | Macros (`macro_rules!`, macro call) | PARTIAL | `grok/src/parser.rs`, `grok/src/macro_expander.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/macro_expander.rs`, `grok/tests/type_checker.rs` | Parser support, macro expansion integration in the type-check pipeline, and unknown-macro diagnostics are in; full macro-system parity with production macro semantics remains. |
-| Collections/closures/indexing/try operator | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Closures, tuple literals, indexing, array literals, and try-operator are implemented; broader collection forms remain missing. |
+| Collections/closures/indexing/try operator | PARTIAL | `grok/src/parser.rs`, `grok/src/type_checker.rs`, `grok/tests/parser.rs`, `grok/tests/type_checker.rs` | Closures, tuple literals, indexing, array literals, byte-string literal collection typing (`Vec<u8>`), and try-operator are implemented; broader collection forms remain missing. |
 
 ## Type System (`docs/Specifications/02-Type-System-Specification.md`)
 
 | Spec area | Status | Evidence (impl/tests) | Gap to close |
 |---|---|---|---|
-| Basic inference/unification | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Tuple-aware unification and polymorphic call-site instantiation are in; full HM generalization/inference completeness is still not complete. |
-| Function types and call checking | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Call checking includes where-bound trait enforcement for concrete mapped type variables; broader polymorphic constraint solving and diagnostics remain. |
+| Basic inference/unification | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Tuple/reference-aware unification and polymorphic call-site instantiation are in; full HM generalization/inference completeness is still not complete. |
+| Function types and call checking | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Call checking includes where-bound trait enforcement for concrete mapped type variables, and unification/impl-signature mismatch diagnostics now carry AST-linked spans; broader polymorphic constraint solving remains. |
 | Struct literal/member typing | DONE | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Field existence/missing/duplicate checks are covered; continue broadening diagnostics. |
 | Match guard typing | DONE | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Add more guard-path tests. |
 | Actor-related typing (`spawn`/`send`/`receive`) | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker_actor.rs` | Receive-pattern message typing is enforced for sends to known actor types; richer actor protocol/API contracts remain. |
-| Traits/bounds/generics semantics | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Trait existence/duplicate/bounds checks, impl completeness/signatures, function where-clause checks, call-site trait-bound enforcement, generic-constructor bound checking, repeated-parameter generic-impl matching checks, multi-parameter impl-bound solving, and subtrait-implied bound satisfaction are in; richer generic constraints remain. |
-| Exhaustiveness checking | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Bool/enum, finite tuple/struct, nested finite enum-payload, and recursive payload/struct decomposition over finite subdomains are implemented; recursive/non-finite payload variants without finite decomposition still require catch-all payload patterns when no wildcard arm exists; full general recursive decomposition remains. |
+| Traits/bounds/generics semantics | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Trait existence/duplicate/bounds checks, impl completeness/signatures, function where-clause checks, call-site trait-bound enforcement, generic-constructor bound checking, repeated-parameter generic-impl matching checks, multi-parameter impl-bound solving, subtrait-implied bound satisfaction, and blanket generic impl solving (`impl<T: Bound> Trait for T`) are in; richer generic constraints remain. |
+| Exhaustiveness checking | PARTIAL | `grok/src/type_checker.rs`, `grok/tests/type_checker.rs` | Bool/enum, finite tuple/struct, nested finite enum-payload, and recursive payload/struct decomposition over finite subdomains are implemented; recursive/non-finite enum payload variants without finite decomposition require catch-all payload patterns, and non-finite recursive struct matches require wildcard arms when finite decomposition is unavailable; full general recursive decomposition remains. |
 
 ## M2 Batch 1 (Completed)
 - Parser: identifier rule fixed to allow trailing digits.
@@ -205,6 +205,58 @@ Status legend:
 - Type checker: macro expansion is now integrated directly into the type-check pipeline (`MacroExpander` runs before definition/constraint passes), so expanded macro expressions participate in regular type checking semantics.
 - Type checker: recursive enum finite-domain decomposition now preserves one-step recursive skeleton shape during cycle handling (enabling nested recursive pattern split checks like `S(Z)` vs `S(S(_))`).
 - Tests: added macro-expansion typing pass/fail coverage and recursive-enum nested decomposition exhaustive/non-exhaustive coverage.
+
+## M2 Batch 33 (Completed)
+- Type checker: constraint/unification diagnostics now preserve and report AST-linked source spans (line/col) for type mismatch, tuple/function arity mismatch, and recursive-type-detection paths.
+- Type checker: trait-impl signature mismatch diagnostics (arity, parameter type, return type) now include impl-block source location.
+- Tests: added span-assertion coverage for unification mismatch diagnostics and strengthened impl-signature mismatch diagnostics coverage.
+
+## M2 Batch 34 (Completed)
+- Type checker: blanket generic trait impl semantics added for bound type-parameter targets (e.g., `impl<T: Show> Marker for T`), including definition-time validation and call-site trait-bound solving.
+- Type checker: impl generic-bound parameter validation now allows blanket impl bound parameters tied to the impl target type parameter.
+- Tests: added where-bound pass/fail coverage for blanket generic impl solving.
+
+## M2 Batch 35 (Completed)
+- Type checker: recursive enum finite-domain handling now supports bounded deeper unfolding during cycle handling, enabling deeper nested recursive pattern split exhaustiveness checks beyond one-step skeletons.
+- Tests: added deeper recursive nested split exhaustive/non-exhaustive coverage for `enum Nat { Z, S(Nat) }`.
+
+## M2 Batch 36 (Completed)
+- Type checker: module semantic coherence validation added for duplicate module declarations, duplicate module definitions, and mixed declaration+inline-definition conflicts.
+- Diagnostics: module coherence failures include source line/column.
+- Tests: added module coherence fail-path coverage with position assertions.
+
+## M2 Batch 37 (Completed)
+- Type checker: byte-string literals now type as `Vec<u8>` (instead of falling through to untyped/default paths).
+- Parser/type annotations: primitive type parsing broadened for full scalar set (`i8/i16/i32/i64/i128/isize`, `u8/u16/u32/u64/u128/usize`, `f32/f64`, `char`, `bool`, `str`, `String`) so primitives are no longer mis-modeled as type variables in annotations.
+- Tests: added byte-string typing pass/fail coverage (`Vec<u8>` acceptance and `str` mismatch rejection).
+
+## M2 Batch 38 (Completed)
+- Type checker: unary operator semantics tightened for `!` and `-` (`!` enforces boolean operand/result; `-` rejects non-numeric operands).
+- Tests: added unary-operator pass/fail coverage (`!true`, `!1`, `-true`).
+
+## M2 Batch 39 (Completed)
+- Parser: unary bitwise-not operator (`~`) added to unary expression grammar.
+- Type checker: unary `~` semantics added (integral-only), and assignment/compound-assignment now reject non-assignable targets (non-lvalues).
+- Diagnostics: invalid assignment target errors include line/column context.
+- Tests: added parser coverage for unary `~`, type-checker pass/fail coverage for unary `~`, and invalid-assignment-target negative coverage.
+
+## M2 Batch 40 (Completed)
+- Parser: escaped literal handling added for string, byte-string, and char literals (`\\`, `\"`, `\n`, `\r`, `\t`, `\0`, and escaped quote for chars).
+- Tests: added parser coverage for escaped string/byte-string and escaped char literals.
+
+## M2 Batch 41 (Completed)
+- Parser/type checker: unary plus operator support added (`+expr`) with numeric-only type enforcement.
+- Type checker: reference/deref unary semantics tightened (`&`/`&mut` produce reference types; `*` requires references) and reference-aware unification/substitution/occurs-check support added.
+- Tests: added parser unary-plus coverage and type-checker reference/deref plus unary-plus pass/fail coverage.
+
+## M2 Batch 42 (Completed)
+- Parser: `pub fn` declarations are now parsed and encoded for checker visibility handling.
+- Type checker: module import validation/materialization now enforces function visibility for internal imports (`use m::f`, grouped imports, and glob imports) based on `pub fn`.
+- Tests: added parser coverage for `pub fn`, updated use-import pass cases to public functions, and added private-import negative coverage with line/col assertions.
+
+## M2 Batch 43 (Completed)
+- Type checker: exhaustiveness checking for non-finite recursive structs now enforces a wildcard arm when finite structural decomposition is not possible.
+- Tests: added non-finite recursive struct wildcard-required pass/fail coverage.
 
 ## Next M2 Batches (Planned)
 1. Extend exhaustiveness to deeper structural/data-carrying patterns beyond current finite-domain coverage (especially recursive/non-finite domains).
